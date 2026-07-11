@@ -19,6 +19,62 @@ Then run the following commands
 -   `npm run format-check` - checks for formatting errors.
 -   `npm run format` - auto-formats all files.
 -   `npm run lint` - checks for Typescript errors.
+-   `npm run type-check` - runs Nuxt type checking.
+-   `npm run test` - runs backend tests.
+
+## Backend
+
+The backend accepts one MP3 or M4B upload plus an email address, stores a durable SQLite job, and
+uses a separate worker process to split embedded chapters with FFmpeg, create a ZIP, and send a
+temporary Mailgun download link.
+
+Run the API locally with:
+
+```bash
+npm run dev
+```
+
+Run the built API with:
+
+```bash
+npm run build
+npm run api:start
+```
+
+Run the worker locally in a second shell with:
+
+```bash
+npm run worker:dev
+```
+
+See [docs/backend.md](docs/backend.md) for endpoint details, job states, storage layout, Docker
+startup, Mailgun setup, and known limitations.
+
+## Frontend workflow
+
+The main page is a focused upload experience for one audiobook at a time:
+
+- Choose exactly one `.m4b` or `.mp3` audiobook with embedded chapter metadata.
+- Enter the email address that should receive the completion link.
+- Submit the multipart upload using backend fields named `file` and `email`.
+- Keep the browser tab open while upload progress is transferring.
+- After upload completes, the page polls `GET /api/jobs/:jobId` for queued, processing, ready,
+  failed, or expired status.
+- The finished ZIP is delivered by email. The frontend never receives or constructs the download
+  token.
+- Download links and generated ZIP files expire after 12 hours by default.
+
+The upload form validates file extensions and email format for user guidance, but the API remains
+authoritative for upload size, supported media, queue capacity, chapter metadata, and storage
+availability. Files without embedded chapter markers fail with `NO_CHAPTERS_FOUND`; silence-based
+or AI chapter detection is not implemented.
+
+Active job recovery uses `sessionStorage` and stores only the public job ID. Email addresses,
+filenames, internal errors, download tokens, and temporary URLs are not persisted in browser
+storage.
+
+For local development, run the Nuxt API and frontend with `npm run dev`. Start `npm run worker:dev`
+in a second shell to process queued uploads and send completion emails.
 
 
 ## How to update dependencies

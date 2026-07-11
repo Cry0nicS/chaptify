@@ -2,8 +2,33 @@ services:
     public-notice:
         image: chaptify:latest
         build: .
+        command: [node, .output/start.mjs]
         ports:
             - "3000:3000"
         env_file:
             -   .env
+        environment:
+            NUXT_STORAGE_ROOT: /data/chaptify
+        volumes:
+            - chaptify-storage:/data/chaptify
+        healthcheck:
+            test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
         restart: unless-stopped
+
+    worker:
+        image: chaptify:latest
+        build: .
+        command: [node, .output/worker.mjs]
+        env_file:
+            -   .env
+        environment:
+            NUXT_STORAGE_ROOT: /data/chaptify
+        volumes:
+            - chaptify-storage:/data/chaptify
+        restart: unless-stopped
+
+volumes:
+    chaptify-storage:

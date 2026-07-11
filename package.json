@@ -3,15 +3,21 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "nuxt build",
+        "api:start": "node .output/start.mjs",
+        "build": "nuxt build && npm run worker:build && npm run start:build",
         "clean": "npx nuxi cleanup && rm -rf node_modules/ && rm -rf .nuxt/ && rm package-lock.json",
-        "dev": "nuxt dev",
+        "dev": "node scripts/nuxt-dev.mjs",
         "format": "prettier --write \"**/*.{js,json,jsx,css,ts,tsx,vue}\"",
         "format-check": "prettier --check \"**/*.{html,js,json,jsx,css,ts,tsx,vue,scss}\"",
         "generate": "nuxt generate",
         "lint": "eslint .",
-        "preview": "nuxt preview",
+        "preview": "node .output/start.mjs",
         "postinstall": "nuxt prepare",
+        "test": "vitest run",
+        "start:build": "esbuild server/start.ts --platform=node --format=esm --target=node22 --outfile=.output/start.mjs",
+        "worker:build": "esbuild server/worker.ts --bundle --platform=node --format=esm --target=node22 --outfile=.output/worker.mjs --external:better-sqlite3 --external:mailgun.js --external:formidable --external:archiver",
+        "worker:dev": "tsx server/worker.ts",
+        "worker:start": "node .output/worker.mjs",
         "type-check": "nuxt typecheck"
     },
     "dependencies": {
@@ -19,6 +25,9 @@
         "@iconify-json/simple-icons": "^1.2.89",
         "@nuxt/ui": "^4.9.0",
         "@nuxtjs/device": "^4.0.0",
+        "archiver": "^8.0.0",
+        "better-sqlite3": "^12.11.1",
+        "formidable": "^3.5.4",
         "mailgun.js": "^13.3.0",
         "nuxt": "^4.4.8",
         "tailwindcss": "^4.3.2",
@@ -27,13 +36,19 @@
     "devDependencies": {
         "@antfu/eslint-config": "^9.1.0",
         "@nuxt/eslint": "^1.16.0",
+        "@types/archiver": "^8.0.0",
+        "@types/better-sqlite3": "^7.6.13",
+        "@types/formidable": "^3.5.1",
         "@types/node": "^26.1.1",
+        "esbuild": "^0.28.1",
         "eslint": "^10.7.0",
         "lint-staged": "^16.4.0",
         "prettier": "^3.9.5",
         "prettier-plugin-tailwindcss": "^0.8.0",
         "simple-git-hooks": "^2.13.1",
+        "tsx": "^4.23.0",
         "typescript": "^6.0.3",
+        "vitest": "^4.1.10",
         "vue-tsc": "^3.3.7"
     },
     "simple-git-hooks": {
@@ -42,5 +57,23 @@
     "lint-staged": {
         "*.{html,js,json,css,ts,vue}": "prettier --check",
         "*.{js,ts,vue}": "eslint"
+    },
+    "optionalDependencies": {
+        "@oxc-minify/binding-linux-x64-gnu": "^0.133.0",
+        "@oxc-minify/binding-linux-x64-musl": "^0.133.0",
+        "@oxc-parser/binding-linux-x64-gnu": "^0.133.0",
+        "@oxc-parser/binding-linux-x64-musl": "^0.133.0",
+        "@oxc-transform/binding-linux-x64-gnu": "^0.133.0",
+        "@oxc-transform/binding-linux-x64-musl": "^0.133.0",
+        "@rolldown/binding-linux-x64-gnu": "^1.1.5",
+        "@rolldown/binding-linux-x64-musl": "^1.1.5",
+        "@rollup/rollup-linux-x64-gnu": "^4.62.2",
+        "@rollup/rollup-linux-x64-musl": "^4.62.2",
+        "@tailwindcss/oxide-linux-x64-gnu": "^4.3.2",
+        "@tailwindcss/oxide-linux-x64-musl": "^4.3.2",
+        "@unrs/resolver-binding-linux-x64-gnu": "^1.12.2",
+        "@unrs/resolver-binding-linux-x64-musl": "^1.12.2",
+        "lightningcss-linux-x64-gnu": "^1.32.0",
+        "lightningcss-linux-x64-musl": "^1.32.0"
     }
 }
