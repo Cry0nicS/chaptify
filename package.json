@@ -1,36 +1,46 @@
 {
-  "name": "chaptify",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "build": "nuxt build",
-    "clean": "npx nuxi cleanup && rm -rf node_modules/ && rm -rf .nuxt/ && rm package-lock.json",
-    "dev": "nuxt dev",
-    "format": "prettier --write \"**/*.{js,json,jsx,css,ts,tsx,vue}\"",
-    "format-check": "prettier --check \"**/*.{html,js,json,jsx,css,ts,tsx,vue,scss}\"",
-    "generate": "nuxt generate",
-    "lint": "eslint .",
-    "preview": "nuxt preview",
-    "postinstall": "nuxt prepare",
-    "type-check": "nuxt typecheck"
-  },
-  "dependencies": {
-    "@iconify-json/lucide": "^1.2.116",
-    "@iconify-json/simple-icons": "^1.2.89",
-    "@nuxt/ui": "^4.9.0",
-    "@nuxtjs/device": "^4.0.0",
-    "mailgun.js": "^13.3.0",
-    "nuxt": "^4.4.8",
-    "tailwindcss": "^4.3.2",
-    "zod": "^4.4.3"
-  },
-  "devDependencies": {
-    "@nuxt/eslint": "^1.16.0",
-    "@types/node": "^26.1.1",
-    "eslint": "^10.7.0",
-    "prettier": "^3.9.5",
-    "prettier-plugin-tailwindcss": "^0.8.0",
-    "typescript": "^6.0.3",
-    "vue-tsc": "^3.3.7"
-  }
+    "name": "chaptify",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "nuxt build",
+        "clean": "npx nuxi cleanup && rm -rf node_modules/ && rm -rf .nuxt/ && rm package-lock.json",
+        "dev": "nuxt dev",
+        "format": "prettier --write \"**/*.{js,json,jsx,css,ts,tsx,vue}\"",
+        "format-check": "prettier --check \"**/*.{html,js,json,jsx,css,ts,tsx,vue,scss}\"",
+        "generate": "nuxt generate",
+        "lint": "eslint .",
+        "preview": "nuxt preview",
+        "postinstall": "nuxt prepare",
+        "type-check": "nuxt typecheck"
+    },
+    "dependencies": {
+        "@iconify-json/lucide": "^1.2.116",
+        "@iconify-json/simple-icons": "^1.2.89",
+        "@nuxt/ui": "^4.9.0",
+        "@nuxtjs/device": "^4.0.0",
+        "mailgun.js": "^13.3.0",
+        "nuxt": "^4.4.8",
+        "tailwindcss": "^4.3.2",
+        "zod": "^4.4.3"
+    },
+    "devDependencies": {
+        "@antfu/eslint-config": "^9.1.0",
+        "@nuxt/eslint": "^1.16.0",
+        "@types/node": "^26.1.1",
+        "eslint": "^10.7.0",
+        "lint-staged": "^16.4.0",
+        "prettier": "^3.9.5",
+        "prettier-plugin-tailwindcss": "^0.8.0",
+        "simple-git-hooks": "^2.13.1",
+        "typescript": "^6.0.3",
+        "vue-tsc": "^3.3.7"
+    },
+    "simple-git-hooks": {
+        "pre-commit": "npx lint-staged"
+    },
+    "lint-staged": {
+        "*.{html,js,json,css,ts,vue}": "prettier --check",
+        "*.{js,ts,vue}": "eslint"
+    }
 }

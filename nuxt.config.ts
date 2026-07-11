@@ -1,46 +1,49 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  colorMode: {
-    fallback: 'dark',
-    preference: 'system'
-  },
+    compatibilityDate: "2025-01-15",
 
-  modules: ['@nuxt/eslint', '@nuxt/ui', '@nuxtjs/device'],
+    eslint: {
+        config: {
+            standalone: false // <--- Required for Antfu ESLint config.
+        }
+    },
 
-  devtools: {
-    enabled: true
-  },
+    // Core Nuxt setup
+    modules: ["@nuxt/eslint", "@nuxt/ui", "@nuxtjs/device"],
 
-  css: ['~/assets/css/main.css'],
+    devtools: {
+        enabled: true
+    },
 
-  compatibilityDate: '2025-01-15',
+    // Global app assets
+    css: ["~/assets/css/main.css"],
 
-  runtimeConfig: {
-    mailgunBaseUrl: process.env.NUXT_MAILGUN_BASE_URL || '',
-    mailgunBcc: process.env.NUXT_MAILGUN_BCC || '',
-    mailgunDomain: process.env.NUXT_MAILGUN_DOMAIN || '',
-    mailgunKey: process.env.NUXT_MAILGUN_KEY || '',
-    mailgunRecipient: process.env.NUXT_MAILGUN_RECIPIENT || '',
-    mailgunSender: process.env.NUXT_MAILGUN_SENDER || '',
-    public: {
-      nodeEnv: process.env.NUXT_PUBLIC_NODE_ENV || 'development'
-    }
-  },
+    // Server-only and public runtime configuration
+    runtimeConfig: {
+        mailgunBaseUrl: process.env.NUXT_MAILGUN_BASE_URL || "",
+        mailgunDomain: process.env.NUXT_MAILGUN_DOMAIN || "",
+        mailgunKey: process.env.NUXT_MAILGUN_KEY || "",
+        mailgunSender: process.env.NUXT_MAILGUN_SENDER || "",
+        mailgunRecipient: process.env.NUXT_MAILGUN_RECIPIENT || "",
+        mailgunBcc: process.env.NUXT_MAILGUN_BCC || "",
+        public: {
+            nodeEnv: process.env.NUXT_PUBLIC_NODE_ENV || "development"
+        }
+    },
 
-  typescript: {
-    strict: true,
-    typeCheck: true
-  },
-  ui: {
-    colorMode: true
-  },
+    // UI configuration
+    colorMode: {
+        fallback: "dark",
+        preference: "system"
+    },
 
-  eslint: {
-    config: {
-      stylistic: {
-        commaDangle: 'never',
-        braceStyle: '1tbs'
-      }
-    }
-  }
-})
+    ui: {
+        colorMode: true
+    },
+
+    // Tooling
+    typescript: {
+        strict: true,
+        typeCheck: true
+    },
+});

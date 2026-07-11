@@ -1,51 +1,51 @@
 <script setup lang="ts">
-import { useNavItems } from '~/composables/use-nav-items'
+import {useNavItems} from "~/composables/use-nav-items";
 
-const { navigationItems } = useNavItems()
+const {navigationItems} = useNavItems();
 </script>
 
 <template>
-  <UHeader
-    class="h-17.5"
-    mode="modal"
-    title="Chaptify"
-    :to="'/'"
-    :menu="{ transition: true }"
-    :ui="{
-      body: 'flex justify-center text-2xl'
-    }">
-    <template #title>
-      <ColorScheme
-        placeholder="chaptify"
-        tag="span">
-        <ClientOnly>
-          <AppLogo class="h-10 w-auto" />
-        </ClientOnly>
-      </ColorScheme>
-    </template>
-
-    <UNavigationMenu
-      color="primary"
-      :highlight="true"
-      highlight-color="primary"
-      :items="navigationItems" />
-
-    <template #right>
-      <NavThemeToggle />
-    </template>
-
-    <template #body>
-      <UNavigationMenu
-        color="primary"
-        :highlight="true"
-        highlight-color="primary"
-        :items="navigationItems"
-        orientation="vertical"
+    <UHeader
+        class="h-17.5"
+        mode="modal"
+        title="Chaptify"
+        :to="'/'"
+        :menu="{transition: true}"
         :ui="{
-          list: 'flex flex-col gap-4',
-          linkLabel: 'text-2xl',
-          linkLeadingIcon: 'size-6'
-        }" />
-    </template>
-  </UHeader>
+            body: 'flex justify-center text-2xl'
+        }">
+        <template #title>
+            <ColorScheme
+                placeholder="chaptify"
+                tag="span">
+                <ClientOnly>
+                    <AppLogo class="h-10 w-auto" />
+                </ClientOnly>
+            </ColorScheme>
+        </template>
+
+        <UNavigationMenu
+            color="primary"
+            :highlight="true"
+            highlight-color="primary"
+            :items="navigationItems" />
+
+        <template #right>
+            <NavThemeToggle />
+        </template>
+
+        <template #body>
+            <UNavigationMenu
+                color="primary"
+                :highlight="true"
+                highlight-color="primary"
+                :items="navigationItems"
+                orientation="vertical"
+                :ui="{
+                    list: 'flex flex-col gap-4',
+                    linkLabel: 'text-2xl',
+                    linkLeadingIcon: 'size-6'
+                }" />
+        </template>
+    </UHeader>
 </template>
