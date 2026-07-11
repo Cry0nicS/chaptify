@@ -1,6 +1,10 @@
 name: ci
 
-on: push
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   ci:
@@ -29,3 +33,12 @@ jobs:
 
       - name: Typecheck
         run: npm run type-check
+
+      - name: Create empty env file for compose validation
+        run: touch .env
+
+      - name: Validate docker compose
+        run: docker compose config
+
+      - name: Build Docker image
+        run: docker build -t chaptify:test .
