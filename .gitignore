@@ -2,6 +2,13 @@
 .output
 .data
 .nuxt
+coverage
+.chaptify-storage
+*.sqlite
+*.sqlite-*
+*.zip
+*.mp3
+*.m4b
 .nitro
 .cache
 dist

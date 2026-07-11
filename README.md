@@ -19,6 +19,36 @@ Then run the following commands
 -   `npm run format-check` - checks for formatting errors.
 -   `npm run format` - auto-formats all files.
 -   `npm run lint` - checks for Typescript errors.
+-   `npm run type-check` - runs Nuxt type checking.
+-   `npm run test` - runs backend tests.
+
+## Backend
+
+The backend accepts one MP3 or M4B upload plus an email address, stores a durable SQLite job, and
+uses a separate worker process to split embedded chapters with FFmpeg, create a ZIP, and send a
+temporary Mailgun download link.
+
+Run the API locally with:
+
+```bash
+npm run dev
+```
+
+Run the built API with:
+
+```bash
+npm run build
+npm run api:start
+```
+
+Run the worker locally in a second shell with:
+
+```bash
+npm run worker:dev
+```
+
+See [docs/backend.md](docs/backend.md) for endpoint details, job states, storage layout, Docker
+startup, Mailgun setup, and known limitations.
 
 
 ## How to update dependencies
