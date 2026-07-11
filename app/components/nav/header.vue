@@ -9,7 +9,7 @@ const {navigationItems} = useNavItems();
         class="h-17.5"
         mode="modal"
         title="Chaptify"
-        :to="'/'"
+        to="/"
         :menu="{transition: true}"
         :ui="{
             body: 'flex justify-center text-2xl'
