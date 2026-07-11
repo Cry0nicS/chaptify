@@ -1,5 +1,5 @@
 import type {BackendConfig} from "../server/utils/backend/config";
-import {mkdir, mkdtemp, stat, writeFile} from "node:fs/promises";
+import {access, mkdir, mkdtemp, stat, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {afterEach, describe, expect, it, vi} from "vitest";
@@ -20,7 +20,7 @@ import {
     sanitizeChapterTitle,
     sanitizeDisplayFilename
 } from "../server/utils/backend/paths";
-import {deliverReadyEmail} from "../server/utils/backend/worker";
+import {deliverReadyEmail, recoverInterruptedJobs} from "../server/utils/backend/worker";
 import {DEFAULT_JOB_RETENTION_HOURS} from "../shared/utils/constants";
 import {uploadMetadataSchema} from "../shared/utils/schemas";
 
@@ -153,6 +153,18 @@ describe("chapter metadata", () => {
             )
         ).toThrow(PublicJobError);
     });
+
+    it("rejects overlapping chapter ranges", () => {
+        expect(() =>
+            validateChapters(
+                [
+                    {title: "One", start: 0, end: 10},
+                    {title: "Two", start: 9, end: 20}
+                ],
+                20
+            )
+        ).toThrow(PublicJobError);
+    });
 });
 
 describe("tokens and persistence", () => {
@@ -182,6 +194,31 @@ describe("tokens and persistence", () => {
             new Date().toISOString()
         );
         expect(jobs.findByPublicId("public-job-id")?.status).toBe("failed");
+    });
+
+    it("removes interrupted worker artifacts before requeueing recoverable jobs", async () => {
+        const {storageRoot, jobs} = await createRepository();
+        const sourceDirectory = join(storageRoot, "jobs", "internal-job-id", "source");
+        const chaptersDirectory = join(storageRoot, "jobs", "internal-job-id", "chapters");
+        const outputDirectory = join(storageRoot, "jobs", "internal-job-id", "output");
+        const sourcePath = join(sourceDirectory, "source.m4b");
+        const chapterPath = join(chaptersDirectory, "partial.m4a");
+        const outputPath = join(outputDirectory, "partial.zip");
+        await mkdir(sourceDirectory, {recursive: true});
+        await mkdir(chaptersDirectory, {recursive: true});
+        await mkdir(outputDirectory, {recursive: true});
+        await writeFile(sourcePath, "source");
+        await writeFile(chapterPath, "partial");
+        await writeFile(outputPath, "partial");
+        createQueuedJob(jobs, storageRoot);
+        jobs.claimQueuedJob(new Date().toISOString());
+
+        await recoverInterruptedJobs(makeConfig(storageRoot), jobs);
+
+        expect(jobs.findByPublicId("public-job-id")?.status).toBe("queued");
+        await expect(access(sourcePath)).resolves.toBeUndefined();
+        await expect(access(chapterPath)).rejects.toThrow();
+        await expect(access(outputPath)).rejects.toThrow();
     });
 
     it("expires ready jobs and rejects expired token lookups", async () => {

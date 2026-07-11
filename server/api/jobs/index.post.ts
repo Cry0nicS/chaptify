@@ -18,6 +18,12 @@ const fieldsSchema = z.object({
     email: z.string().email().max(320)
 });
 
+const collectUploadedFilePaths = (files: formidable.Files): string[] =>
+    Object.values(files)
+        .flat()
+        .filter((file): file is formidable.File => Boolean(file?.filepath))
+        .map((file) => file.filepath);
+
 const parseMultipartUpload = async (
     event: H3Event,
     storageRoot: string,
@@ -84,19 +90,25 @@ export default defineEventHandler(async (event) => {
         });
     }
 
+    let tempPaths: string[] = [];
     let tempPath: string | null = null;
 
     try {
         const parsed = await parseMultipartUpload(event, config.storageRoot, config.maxUploadBytes);
-        const emailValue = Array.isArray(parsed.fields.email)
-            ? parsed.fields.email[0]
-            : parsed.fields.email;
+        tempPaths = collectUploadedFilePaths(parsed.files);
+        const emailValues = Array.isArray(parsed.fields.email)
+            ? parsed.fields.email
+            : [parsed.fields.email];
+        const emailValue = emailValues[0];
         const {email} = fieldsSchema.parse({email: emailValue});
         const fileValues = parsed.files.file;
-        const file = Array.isArray(fileValues) ? fileValues[0] : fileValues;
+        const files = Array.isArray(fileValues) ? fileValues : [fileValues];
+        const file = files[0];
 
         if (
             !file ||
+            files.length !== 1 ||
+            emailValues.length !== 1 ||
             Object.keys(parsed.files).length !== 1 ||
             Object.keys(parsed.fields).length !== 1
         ) {
@@ -131,6 +143,7 @@ export default defineEventHandler(async (event) => {
 
         const storedUpload = await createJobStorage(config.storageRoot, tempPath, originalFilename);
         tempPath = null;
+        tempPaths = [];
         const publicJobId = createPublicId();
         const createdAt = new Date().toISOString();
         jobs.createJob({
@@ -151,8 +164,8 @@ export default defineEventHandler(async (event) => {
             createdAt
         };
     } catch (error) {
-        if (tempPath) {
-            await rm(tempPath, {force: true});
+        for (const path of tempPath ? [...tempPaths, tempPath] : tempPaths) {
+            await rm(path, {force: true});
         }
 
         if (error instanceof PublicJobError) {
@@ -176,6 +189,28 @@ export default defineEventHandler(async (event) => {
                 statusMessage: "Invalid upload",
                 data: {error: {code: "INVALID_UPLOAD", message: "The upload fields are invalid."}}
             });
+        }
+
+        if (
+            typeof error === "object" &&
+            error !== null &&
+            ("httpCode" in error || "message" in error)
+        ) {
+            const httpCode = "httpCode" in error ? Number(error.httpCode) : 0;
+            const message = "message" in error ? String(error.message) : "";
+
+            if (httpCode === 413 || message.toLowerCase().includes("maxfilesize")) {
+                throw createError({
+                    statusCode: 413,
+                    statusMessage: "File too large",
+                    data: {
+                        error: {
+                            code: "FILE_TOO_LARGE",
+                            message: "The uploaded audiobook is larger than the configured limit."
+                        }
+                    }
+                });
+            }
         }
 
         throw error;

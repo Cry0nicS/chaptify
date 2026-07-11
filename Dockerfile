@@ -7,11 +7,12 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 COPY package*.json ./
-RUN npm ci --prefer-offline
+RUN npm ci --prefer-offline --ignore-scripts
 
 # Then copy everything else
 COPY . .
 
+RUN npm run postinstall
 RUN npm run build
 
 
@@ -27,10 +28,13 @@ ENV NUXT_STORAGE_ROOT=/data/chaptify
 RUN apk add --no-cache ffmpeg python3 make g++
 COPY package*.json ./
 RUN npm ci --omit=dev --prefer-offline --ignore-scripts
+RUN npm rebuild better-sqlite3
 
 # Copy production build artifacts
 COPY --from=builder /app/.output .output
 COPY --from=builder /app/public ./public
+RUN mkdir -p .output/server/node_modules/better-sqlite3/build \
+    && cp -R node_modules/better-sqlite3/build/Release .output/server/node_modules/better-sqlite3/build/
 
 # Use non-root user for security
 RUN addgroup -S appgroup \

@@ -18,6 +18,7 @@ const isDark = computed({
             color="neutral"
             variant="ghost"
             size="xl"
+            :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
             @click="isDark = !isDark" />
 
         <template #fallback>

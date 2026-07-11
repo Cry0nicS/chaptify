@@ -1,6 +1,6 @@
 import type {BackendConfig} from "./config";
 import type {JobRecord, JobRepository} from "./database";
-import {mkdir, rm} from "node:fs/promises";
+import {access, mkdir, rm} from "node:fs/promises";
 import {basename, join} from "node:path";
 import {createChapterZip} from "./archive";
 import {runCleanup} from "./cleanup";
@@ -121,6 +121,27 @@ export const processJob = async (
 };
 
 export const recoverInterruptedJobs = async (config: BackendConfig, jobs: JobRepository) => {
+    const interruptedJobs = jobs.listProcessingJobs();
+
+    for (const job of interruptedJobs) {
+        const directory = jobDirectory(config.storageRoot, job.internalId);
+        const chaptersDirectory = ensurePathInside(config.storageRoot, join(directory, "chapters"));
+        const outputDirectory = ensurePathInside(config.storageRoot, join(directory, "output"));
+
+        try {
+            await access(job.sourcePath);
+            await rm(chaptersDirectory, {recursive: true, force: true});
+            await rm(outputDirectory, {recursive: true, force: true});
+        } catch (error) {
+            jobs.markFailed(
+                job.internalId,
+                "PROCESSING_FAILED",
+                `Interrupted job could not be recovered: ${String(error)}`,
+                new Date().toISOString()
+            );
+        }
+    }
+
     jobs.resetProcessingJobs();
     await runCleanup(config.storageRoot, jobs);
 };

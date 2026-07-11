@@ -1,92 +1,380 @@
+<script setup lang="ts">
+import type {JobStatusResponse, UploadJobResponse} from "#shared/utils/types";
+import type {FrontendApiError} from "../utils/api-errors";
+import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue";
+import {toFrontendApiError} from "../utils/api-errors";
+import {maskEmailAddress, validateEmailAddress} from "../utils/email";
+import {validateAudiobookFile} from "../utils/file-validation";
+import {formatFileSize} from "../utils/format-file-size";
+import {displayProcessingProgress} from "../utils/progress";
+
+type WorkflowState =
+    | {status: "idle"}
+    | {status: "selected"}
+    | {status: "uploading"}
+    | {status: "queued"; job: JobStatusResponse | null; submittedEmail: string | null}
+    | {status: "processing"; job: JobStatusResponse; submittedEmail: string | null}
+    | {status: "ready"; job: JobStatusResponse}
+    | {status: "failed"; job: JobStatusResponse | null; error: FrontendApiError | null}
+    | {status: "expired"; job: JobStatusResponse};
+
+const selectedFile = ref<File | null>(null);
+const email = ref("");
+const workflow = ref<WorkflowState>({status: "idle"});
+const pageError = ref<FrontendApiError | null>(null);
+const submittedEmail = ref<string | null>(null);
+const visibleProgress = ref(0);
+const beforeUnload = (event: BeforeUnloadEvent) => {
+    event.preventDefault();
+    event.returnValue = "";
+};
+
+const {abortUpload, isUploading, progress: uploadProgress, uploadJob} = useJobUpload();
+const {
+    activeJobId,
+    clearActiveJob,
+    isRecovering,
+    job,
+    recoverActiveJob,
+    startPolling,
+    stopPolling,
+    transientError
+} = useJobStatus();
+
+const fileValidation = computed(() => validateAudiobookFile(selectedFile.value));
+const emailValidation = computed(() =>
+    email.value.trim() ? validateEmailAddress(email.value) : "Enter a valid email address."
+);
+const canSubmit = computed(
+    () =>
+        fileValidation.value.valid &&
+        !emailValidation.value &&
+        workflow.value.status !== "uploading"
+);
+const selectedFileDetails = computed(() => {
+    if (!selectedFile.value) {
+        return null;
+    }
+
+    return `${selectedFile.value.name}, ${formatFileSize(selectedFile.value.size)}`;
+});
+const maskedSubmittedEmail = computed(() =>
+    submittedEmail.value ? maskEmailAddress(submittedEmail.value) : null
+);
+const showUploadForm = computed(
+    () =>
+        workflow.value.status === "idle" ||
+        workflow.value.status === "selected" ||
+        workflow.value.status === "uploading" ||
+        (workflow.value.status === "failed" && !workflow.value.job)
+);
+const terminalJob = computed(() =>
+    workflow.value.status === "ready" ||
+    (workflow.value.status === "failed" && workflow.value.job) ||
+    workflow.value.status === "expired"
+        ? workflow.value.job
+        : null
+);
+
+definePageMeta({
+    layout: "default"
+});
+
+useSeoMeta({
+    title: "Chaptify | Split audiobooks into chapters",
+    description:
+        "Upload an M4B or MP3 audiobook with embedded chapter metadata and receive chapter files by email."
+});
+
+const terminalStatusToWorkflow = (nextJob: JobStatusResponse): WorkflowState => {
+    if (nextJob.status === "ready") {
+        return {status: "ready", job: nextJob};
+    }
+
+    if (nextJob.status === "failed") {
+        return {
+            status: "failed",
+            job: nextJob,
+            error: nextJob.error
+                ? {
+                      code: nextJob.error.code,
+                      message: nextJob.error.message,
+                      guidance: toFrontendApiError({error: nextJob.error}).guidance
+                  }
+                : null
+        };
+    }
+
+    return {status: "expired", job: nextJob};
+};
+
+const syncWorkflowFromJob = (nextJob: JobStatusResponse | null) => {
+    if (!nextJob) {
+        return;
+    }
+
+    visibleProgress.value = displayProcessingProgress(
+        nextJob.status,
+        visibleProgress.value,
+        nextJob.progress
+    );
+
+    if (nextJob.status === "queued") {
+        workflow.value = {
+            status: "queued",
+            job: nextJob,
+            submittedEmail: submittedEmail.value
+        };
+        return;
+    }
+
+    if (nextJob.status === "processing") {
+        workflow.value = {
+            status: "processing",
+            job: nextJob,
+            submittedEmail: submittedEmail.value
+        };
+        return;
+    }
+
+    workflow.value = terminalStatusToWorkflow(nextJob);
+};
+
+watch(job, syncWorkflowFromJob);
+
+watch(isUploading, (uploading) => {
+    if (!import.meta.client) {
+        return;
+    }
+
+    if (uploading) {
+        window.addEventListener("beforeunload", beforeUnload);
+    } else {
+        window.removeEventListener("beforeunload", beforeUnload);
+    }
+});
+
+const onFileSelected = (file: File) => {
+    selectedFile.value = file;
+    pageError.value = null;
+    workflow.value = {status: "selected"};
+};
+
+const onFileRemoved = () => {
+    selectedFile.value = null;
+    pageError.value = null;
+    workflow.value = {status: "idle"};
+};
+
+const handleCreatedJob = (created: UploadJobResponse) => {
+    visibleProgress.value = 0;
+    const queuedJob: JobStatusResponse = {
+        jobId: created.jobId,
+        status: "queued",
+        progress: 0,
+        currentChapter: null,
+        totalChapters: null,
+        createdAt: created.createdAt,
+        completedAt: null,
+        expiresAt: null,
+        emailStatus: "pending",
+        error: null
+    };
+    workflow.value = {
+        status: "queued",
+        job: queuedJob,
+        submittedEmail: submittedEmail.value
+    };
+    startPolling(created.jobId);
+};
+
+const submitUpload = async () => {
+    if (!selectedFile.value || !canSubmit.value || isUploading.value) {
+        return;
+    }
+
+    pageError.value = null;
+    submittedEmail.value = email.value.trim();
+    workflow.value = {status: "uploading"};
+
+    const result = await uploadJob({
+        file: selectedFile.value,
+        email: email.value
+    });
+
+    if (result.ok) {
+        handleCreatedJob(result.data);
+        return;
+    }
+
+    pageError.value = result.failure.error;
+    workflow.value = {
+        status: "failed",
+        job: null,
+        error: result.failure.error
+    };
+};
+
+const startOver = () => {
+    if (isUploading.value) {
+        abortUpload();
+    }
+
+    stopPolling();
+    clearActiveJob();
+    selectedFile.value = null;
+    email.value = "";
+    submittedEmail.value = null;
+    pageError.value = null;
+    visibleProgress.value = 0;
+    workflow.value = {status: "idle"};
+};
+
+onMounted(async () => {
+    const recovered = await recoverActiveJob();
+
+    if (recovered) {
+        syncWorkflowFromJob(recovered);
+    }
+});
+
+onBeforeUnmount(() => {
+    stopPolling();
+    if (import.meta.client) {
+        window.removeEventListener("beforeunload", beforeUnload);
+    }
+});
+</script>
+
 <template>
-    <div>
-        <UPageHero
-            title="Welcome to mkk.digital Playground"
-            description="A production-ready starter template powered by Nuxt UI. Build beautiful, accessible, and performant applications in minutes."
-            :links="[
-                {
-                    label: 'UI Library',
-                    to: 'https://ui.nuxt.com/docs/components',
-                    target: '_blank',
-                    trailingIcon: 'i-lucide-arrow-right',
-                    size: 'xl'
-                },
-                {
-                    label: 'GitHub',
-                    to: 'https://github.com/orgs/meine-krankenkasse/',
-                    target: '_blank',
-                    icon: 'i-simple-icons-github',
-                    size: 'xl',
-                    color: 'neutral',
-                    variant: 'subtle'
-                }
-            ]" />
+    <div class="mx-auto max-w-3xl py-8 sm:py-12">
+        <section class="mb-8 space-y-4">
+            <UBadge
+                color="primary"
+                variant="soft"
+                icon="i-lucide-headphones">
+                M4B and MP3
+            </UBadge>
+            <div class="space-y-3">
+                <h1 class="text-highlighted text-3xl font-semibold tracking-normal sm:text-4xl">
+                    Split your audiobook into chapters
+                </h1>
+                <p class="text-muted max-w-2xl text-base sm:text-lg">
+                    Upload one M4B or MP3 audiobook. Chaptify will split it into individual chapter
+                    files, package them as a ZIP, and email you a temporary download link.
+                </p>
+            </div>
+        </section>
 
-        <UPageSection
-            id="features"
-            title="Everything you need to build modern Nuxt apps"
-            description="Start with a solid foundation. This template includes all the essentials for building production-ready applications with Nuxt UI's powerful component system."
-            :features="[
-                {
-                    icon: 'i-lucide-rocket',
-                    title: 'Production-ready from day one',
-                    description:
-                        'Pre-configured with TypeScript, ESLint, Tailwind CSS, and all the best practices. Focus on building features, not setting up tooling.'
-                },
-                {
-                    icon: 'i-lucide-palette',
-                    title: 'Beautiful by default',
-                    description:
-                        'Leveraging Nuxt UI\'s design system with automatic dark mode, consistent spacing, and polished components that look great out of the box.'
-                },
-                {
-                    icon: 'i-lucide-zap',
-                    title: 'Lightning fast',
-                    description:
-                        'Optimized for performance with SSR/SSG support, automatic code splitting, and edge-ready deployment. Your users will love the speed.'
-                },
-                {
-                    icon: 'i-lucide-blocks',
-                    title: '100+ components included',
-                    description:
-                        'Access Nuxt UI\'s comprehensive component library. From forms to navigation, everything is accessible, responsive, and customizable.'
-                },
-                {
-                    icon: 'i-lucide-code-2',
-                    title: 'Developer experience first',
-                    description:
-                        'Auto-imports, hot module replacement, and TypeScript support. Write less boilerplate and ship more features.'
-                },
-                {
-                    icon: 'i-lucide-shield-check',
-                    title: 'Built for scale',
-                    description:
-                        'Enterprise-ready architecture with proper error handling, SEO optimization, and security best practices built-in.'
-                }
-            ]" />
+        <div class="space-y-6">
+            <UCard>
+                <template #header>
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h2 class="text-highlighted text-lg font-semibold">
+                                Process audiobook
+                            </h2>
+                            <p class="text-muted text-sm">Embedded chapter metadata is required.</p>
+                        </div>
+                        <UBadge
+                            v-if="activeJobId"
+                            color="neutral"
+                            variant="soft">
+                            Active job restored
+                        </UBadge>
+                    </div>
+                </template>
 
-        <UPageSection>
-            <UPageCTA
-                title="Ready to build your next Nuxt app?"
-                description="Join thousands of developers building with Nuxt and Nuxt UI. Get this template and start shipping today."
-                variant="subtle"
-                :links="[
-                    {
-                        label: 'Start building',
-                        to: 'https://nuxt.com',
-                        target: '_blank',
-                        trailingIcon: 'i-lucide-arrow-right',
-                        color: 'neutral'
-                    },
-                    {
-                        label: 'View this project on GitHub',
-                        to: 'https://github.com/',
-                        target: '_blank',
-                        icon: 'i-simple-icons-github',
-                        color: 'neutral',
-                        variant: 'outline'
-                    }
-                ]" />
-        </UPageSection>
+                <div
+                    v-if="isRecovering"
+                    class="py-8"
+                    aria-live="polite">
+                    <UProgress animation="carousel" />
+                    <p class="text-muted mt-3 text-sm">Checking your active job...</p>
+                </div>
+
+                <AudiobookUploadForm
+                    v-else-if="showUploadForm"
+                    v-model:email="email"
+                    :file="selectedFile"
+                    :disabled="workflow.status === 'uploading'"
+                    :is-uploading="workflow.status === 'uploading'"
+                    :upload-progress-label="uploadProgress.label"
+                    :upload-progress-percent="uploadProgress.percent"
+                    @file-selected="onFileSelected"
+                    @file-removed="onFileRemoved"
+                    @submit="submitUpload" />
+
+                <div
+                    v-if="selectedFileDetails && workflow.status === 'uploading'"
+                    class="sr-only"
+                    aria-live="polite">
+                    Uploading {{ selectedFileDetails }}
+                </div>
+
+                <template #footer>
+                    <div class="text-muted space-y-2 text-sm">
+                        <p>
+                            Your audiobook is uploaded for temporary processing and is not stored
+                            permanently. The generated ZIP and download link expire after 12 hours.
+                        </p>
+                        <p>Only upload audiobooks that you own or are authorized to process.</p>
+                    </div>
+                </template>
+            </UCard>
+
+            <UAlert
+                v-if="pageError"
+                color="error"
+                variant="soft"
+                icon="i-lucide-circle-alert"
+                :title="pageError.message"
+                :description="pageError.guidance"
+                role="alert" />
+
+            <section
+                v-if="workflow.status === 'queued'"
+                class="space-y-4">
+                <JobProgress
+                    v-if="workflow.job"
+                    :job="workflow.job"
+                    :previous-progress="visibleProgress"
+                    :transient-error="transientError" />
+                <UAlert
+                    color="primary"
+                    variant="soft"
+                    icon="i-lucide-mail"
+                    title="Email queued for completion"
+                    :description="
+                        maskedSubmittedEmail
+                            ? `The download link will be sent to ${maskedSubmittedEmail}.`
+                            : 'The download link will be sent by email.'
+                    " />
+            </section>
+
+            <JobProgress
+                v-if="workflow.status === 'processing'"
+                :job="workflow.job"
+                :previous-progress="visibleProgress"
+                :transient-error="transientError" />
+
+            <JobResult
+                v-if="terminalJob"
+                :job="terminalJob"
+                @start-over="startOver" />
+
+            <div
+                v-if="workflow.status === 'failed' && !workflow.job"
+                class="flex justify-start">
+                <UButton
+                    type="button"
+                    color="neutral"
+                    variant="soft"
+                    icon="i-lucide-refresh-cw"
+                    @click="startOver">
+                    Start over
+                </UButton>
+            </div>
+        </div>
     </div>
 </template>

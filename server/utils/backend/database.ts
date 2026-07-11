@@ -371,6 +371,14 @@ export const createJobRepository = (database: Database.Database) => {
                 .run();
         },
 
+        listProcessingJobs(): JobRecord[] {
+            const rows = database
+                .prepare("SELECT * FROM jobs WHERE status = 'processing'")
+                .all() as Array<Record<string, unknown>>;
+
+            return rows.map(rowToJob);
+        },
+
         listExpiredReadyJobs(now: string): JobRecord[] {
             const rows = database
                 .prepare(

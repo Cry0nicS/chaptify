@@ -47,6 +47,7 @@ export interface MediaInspection {
 
 export const validateChapters = (chapters: ChapterInfo[], duration: number): void => {
     let previousStart = -1;
+    let previousEnd = 0;
 
     for (const chapter of chapters) {
         if (
@@ -55,12 +56,14 @@ export const validateChapters = (chapters: ChapterInfo[], duration: number): voi
             chapter.start < 0 ||
             chapter.end <= chapter.start ||
             chapter.end > duration + 0.25 ||
-            chapter.start < previousStart
+            chapter.start < previousStart ||
+            chapter.start < previousEnd
         ) {
             throw new PublicJobError("INVALID_CHAPTER_METADATA");
         }
 
         previousStart = chapter.start;
+        previousEnd = chapter.end;
     }
 };
 
