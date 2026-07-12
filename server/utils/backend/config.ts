@@ -34,6 +34,12 @@ const runtimeConfigSchema = z.object({
 
 export type BackendConfig = z.infer<typeof runtimeConfigSchema>;
 
+/**
+ * Reads backend configuration for the standalone worker process.
+ *
+ * The worker does not run inside Nuxt's runtime config container, so it depends on environment
+ * variables loaded by the startup wrapper before this function is called.
+ */
 export const getBackendConfigFromEnv = (): BackendConfig =>
     runtimeConfigSchema.parse({
         appBaseUrl:
@@ -54,6 +60,12 @@ export const getBackendConfigFromEnv = (): BackendConfig =>
         mailgunBcc: process.env.NUXT_MAILGUN_BCC || ""
     });
 
+/**
+ * Reads backend configuration inside Nitro while preserving worker-compatible fallbacks.
+ *
+ * Environment values can still override runtime config during Docker starts, and
+ * `CHAPTIFY_APP_BASE_URL` avoids Nuxt treating `NUXT_APP_BASE_URL` as a route base path.
+ */
 export const getBackendConfig = (): BackendConfig => {
     const runtimeConfig = typeof useRuntimeConfig === "function" ? useRuntimeConfig() : {};
     const values = runtimeConfig as Record<string, unknown>;
@@ -81,6 +93,12 @@ export const getBackendConfig = (): BackendConfig => {
 
 export const normalizeBaseUrl = (baseUrl: string): string => baseUrl.replace(/\/+$/, "");
 
+/**
+ * Creates the shared storage directories required by both API and worker processes.
+ *
+ * The storage root must be writable but is never served statically; public access always goes
+ * through token-checked API routes.
+ */
 export const ensureStorageRoot = async (storageRoot: string) => {
     await mkdir(resolve(storageRoot, "database"), {recursive: true, mode: 0o700});
     await mkdir(resolve(storageRoot, "jobs"), {recursive: true, mode: 0o700});

@@ -205,6 +205,11 @@ const downloadReadyJob = async () => {
         return;
     }
 
+    /*
+     * The browser download path uses the session-scoped job-access token, not the emailed ZIP
+     * token. This lets users recover a ready upload in the same tab session without exposing the
+     * Mailgun link credential to frontend state.
+     */
     browserDownloadError.value = null;
     isBrowserDownloadStarting.value = true;
 

@@ -52,6 +52,13 @@ export const deliverReadyEmail = async (
     jobs.markEmailFailed(job.internalId);
 };
 
+/**
+ * Runs the full processing pipeline for one already-claimed job.
+ *
+ * The source file is inspected, split, zipped, and then removed after the ZIP is durable. Email
+ * delivery happens after `markReady`, so Mailgun failures only affect `emailStatus` and never turn
+ * a successfully generated archive into a failed processing job.
+ */
 export const processJob = async (
     config: BackendConfig,
     jobs: JobRepository,
@@ -120,6 +127,12 @@ export const processJob = async (
     }
 };
 
+/**
+ * Returns interrupted jobs to a clean queued state before the worker accepts new work.
+ *
+ * Jobs are recoverable only when their source upload still exists. Partial chapter files and ZIPs
+ * are deleted first so the next claim starts from source media instead of reusing stale output.
+ */
 export const recoverInterruptedJobs = async (config: BackendConfig, jobs: JobRepository) => {
     const interruptedJobs = jobs.listProcessingJobs();
 
@@ -146,6 +159,12 @@ export const recoverInterruptedJobs = async (config: BackendConfig, jobs: JobRep
     await runCleanup(config.storageRoot, jobs);
 };
 
+/**
+ * Polls SQLite for queued work until a termination signal is received.
+ *
+ * Each loop claims up to `workerConcurrency` jobs and tracks their promises locally. Shutdown stops
+ * new claims but lets active jobs finish their current processing path before the loop exits.
+ */
 export const runWorkerLoop = async (config: BackendConfig, jobs: JobRepository) => {
     let shuttingDown = false;
     const activeJobs = new Set<Promise<void>>();

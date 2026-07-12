@@ -1,4 +1,3 @@
-// https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
     compatibilityDate: "2025-01-15",
 
@@ -8,17 +7,14 @@ export default defineNuxtConfig({
         }
     },
 
-    // Core Nuxt setup
     modules: ["@nuxt/eslint", "@nuxt/ui", "@nuxtjs/device"],
 
     devtools: {
         enabled: true
     },
 
-    // Global app assets
     css: ["~/assets/css/main.css"],
 
-    // Server-only and public runtime configuration
     runtimeConfig: {
         appBaseUrl: "http://localhost:3000",
         storageRoot: "",
@@ -38,7 +34,6 @@ export default defineNuxtConfig({
         }
     },
 
-    // UI configuration
     colorMode: {
         fallback: "dark",
         preference: "system"
@@ -48,7 +43,6 @@ export default defineNuxtConfig({
         colorMode: true
     },
 
-    // Tooling
     typescript: {
         strict: true,
         typeCheck: true

@@ -13,6 +13,12 @@ const maskEmail = (email: string): string => {
     return `${local?.slice(0, 2) || "**"}***@${domain || "***"}`;
 };
 
+/**
+ * Creates the Mailgun adapter used by the worker after ZIP finalization.
+ *
+ * Delivery errors are rethrown with a masked recipient because logs must not contain full email
+ * addresses, credentials, or temporary download links. The worker decides retry and status rules.
+ */
 export const createMailgunService = (config: BackendConfig) => {
     const isConfigured = Boolean(
         config.mailgunKey && config.mailgunDomain && config.mailgunSender && config.mailgunBaseUrl

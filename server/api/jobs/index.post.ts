@@ -69,6 +69,14 @@ const parseMultipartUpload = async (
     });
 };
 
+/**
+ * POST /api/jobs creates an asynchronous audiobook-processing job.
+ *
+ * The request must contain exactly one `file` upload and one `email` field. Multipart bytes are
+ * streamed to a temporary upload path, moved into private job storage, and queued in SQLite; FFmpeg
+ * work is performed later by the worker. The response returns the public job ID and the one-time
+ * browser job-access token, while only the token hash is stored.
+ */
 export default defineEventHandler(async (event) => {
     const {config, jobs} = await createBackendContext();
 

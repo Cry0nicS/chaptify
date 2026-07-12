@@ -2,6 +2,13 @@ import type {JobRepository} from "./database";
 import {safeRemoveInside} from "./paths";
 import {cleanupJobFiles} from "./storage";
 
+/**
+ * Removes expired ready output and failed-job leftovers from shared storage.
+ *
+ * Expired ready jobs lose their ZIP, job directory, and token hashes. Failed jobs keep their public
+ * status row but lose temporary files. Each removal is best-effort so one bad directory does not
+ * stop the worker from cleaning other jobs.
+ */
 export const runCleanup = async (storageRoot: string, jobs: JobRepository): Promise<void> => {
     const now = new Date().toISOString();
     const expiredJobs = jobs.listExpiredReadyJobs(now);

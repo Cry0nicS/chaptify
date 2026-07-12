@@ -89,6 +89,13 @@ interface UploadListeners {
     timeout: () => void;
 }
 
+/**
+ * Uploads one audiobook with real browser upload progress.
+ *
+ * Nuxt `$fetch` does not expose upload progress events, so this composable owns an XHR instance
+ * and removes every listener when the request settles. It rejects concurrent uploads to avoid
+ * mixing progress and abort state between two multipart requests.
+ */
 export const useJobUpload = (options: UseJobUploadOptions = {}) => {
     const progress = ref<UploadProgress>(defaultProgress());
     const isUploading = ref(false);

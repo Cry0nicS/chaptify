@@ -5,6 +5,13 @@ import {createBackendContext} from "../../../utils/backend/context";
 import {hashBrowserJobAccessToken} from "../../../utils/backend/ids";
 import {ensurePathInside} from "../../../utils/backend/paths";
 
+/**
+ * POST /api/jobs/:jobId/download streams a ready ZIP to the original browser session.
+ *
+ * The body must include the browser job-access token returned by `POST /api/jobs`. The token is
+ * hashed before lookup and must match the public job ID, ready state, and unexpired retention
+ * window; it is not interchangeable with the emailed download token.
+ */
 export default defineEventHandler(async (event) => {
     const {config, jobs} = await createBackendContext();
     const jobId = getRouterParam(event, "job-id") || "";

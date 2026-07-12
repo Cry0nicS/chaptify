@@ -3,6 +3,12 @@ import {join} from "node:path";
 import {createBackendContext} from "../utils/backend/context";
 import {ensurePathInside} from "../utils/backend/paths";
 
+/**
+ * GET /api/health verifies the API can reach SQLite and write shared storage.
+ *
+ * Docker uses this endpoint to check the API service. The worker has no HTTP listener, so shared
+ * storage and database readiness here are the API-side signal that both processes can coordinate.
+ */
 export default defineEventHandler(async () => {
     try {
         const {config, database} = await createBackendContext();

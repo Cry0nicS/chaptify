@@ -62,6 +62,12 @@ export const buildChapterFilenames = (
     });
 };
 
+/**
+ * Resolves a candidate path and rejects anything outside the private storage root.
+ *
+ * Every file operation that touches uploads, generated chapters, ZIPs, or cleanup targets should
+ * pass through this guard so job-controlled names cannot escape via traversal or absolute paths.
+ */
 export const ensurePathInside = (root: string, candidate: string): string => {
     const resolvedRoot = resolve(root);
     const resolvedCandidate = resolve(candidate);
@@ -79,6 +85,12 @@ export const ensurePathInside = (root: string, candidate: string): string => {
 export const jobDirectory = (storageRoot: string, internalId: string): string =>
     ensurePathInside(storageRoot, join(storageRoot, "jobs", internalId));
 
+/**
+ * Deletes a storage-root-contained path without following directory symlinks.
+ *
+ * Cleanup is intentionally idempotent: missing paths are treated as already removed, and symlinks
+ * are unlinked directly rather than traversed.
+ */
 export const safeRemoveInside = async (storageRoot: string, target: string): Promise<void> => {
     const safeTarget = ensurePathInside(storageRoot, target);
 

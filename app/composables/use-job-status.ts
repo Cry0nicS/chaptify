@@ -21,6 +21,13 @@ const isPollingComplete = (job: JobStatusResponse): boolean =>
     job.status === "expired" ||
     (job.status === "ready" && job.emailStatus !== "pending");
 
+/**
+ * Polls public job status and restores the active browser-download credential.
+ *
+ * The composable persists only the public job ID and browser job-access token in session storage.
+ * Timers and in-flight requests are aborted on scope disposal, and polling continues while a ready
+ * ZIP is waiting on Mailgun so the UI can show the final email delivery state.
+ */
 export const useJobStatus = (options: UseJobStatusOptions = {}) => {
     const job = ref<JobStatusResponse | null>(null);
     const transientError = ref<string | null>(null);

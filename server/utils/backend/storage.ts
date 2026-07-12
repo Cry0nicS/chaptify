@@ -35,6 +35,13 @@ export const ensureEnoughStorage = async (
     }
 };
 
+/**
+ * Moves a completed multipart upload into its private job directory.
+ *
+ * The browser-provided filename is used only to infer the allowed extension and create a sanitized
+ * display name. Internal storage paths are generated from a random internal ID and kept inside the
+ * configured storage root.
+ */
 export const createJobStorage = async (
     storageRoot: string,
     tempUploadPath: string,
@@ -73,6 +80,12 @@ export const createJobStorage = async (
     };
 };
 
+/**
+ * Removes all files for a job directory, if it exists.
+ *
+ * The path is resolved through storage-root safety checks, making this safe to call repeatedly from
+ * cleanup, failure, and expiry paths.
+ */
 export const cleanupJobFiles = async (storageRoot: string, internalId: string): Promise<void> => {
     await safeRemoveInside(storageRoot, jobDirectory(storageRoot, internalId));
 };

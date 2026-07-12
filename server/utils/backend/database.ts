@@ -262,6 +262,13 @@ export const createJobRepository = (database: Database.Database) => {
             return row ? rowToJob(row) : null;
         },
 
+        /**
+         * Atomically claims the oldest queued job for one worker slot.
+         *
+         * The transaction first selects a candidate, then conditionally updates only rows that
+         * are still queued. That guard is the cross-process boundary that prevents duplicate
+         * processing when multiple worker loops share the same SQLite database.
+         */
         claimQueuedJob(now: string): JobRecord | null {
             const transaction = database.transaction(() => {
                 const row = database
@@ -309,6 +316,12 @@ export const createJobRepository = (database: Database.Database) => {
             return row ? rowToJob(row) : null;
         },
 
+        /**
+         * Advances visible processing progress without allowing regressions.
+         *
+         * Workers report coarse milestones and per-chapter completion. Keeping progress monotonic
+         * avoids UI jitter when recovery or retry paths write an older milestone after a newer one.
+         */
         updateProgress(
             internalId: string,
             progress: number,
@@ -351,6 +364,13 @@ export const createJobRepository = (database: Database.Database) => {
                 .run(publicErrorCode, publicError?.message || null, internalError, now, internalId);
         },
 
+        /**
+         * Finalizes a successfully processed job and records the download-token hash.
+         *
+         * The raw token is returned only to the worker so it can be embedded in the completion
+         * email. SQLite stores the hash, which means a database read alone cannot recover a usable
+         * ZIP download URL.
+         */
         markReady(
             internalId: string,
             zipPath: string,
@@ -388,6 +408,12 @@ export const createJobRepository = (database: Database.Database) => {
                 .run(internalId);
         },
 
+        /**
+         * Records successful email delivery and drops the submitted address.
+         *
+         * Processing readiness is independent of Mailgun delivery. Once delivery succeeds, the
+         * address is no longer needed for retries and is removed from persistence.
+         */
         markEmailSent(internalId: string, now: string) {
             database
                 .prepare(
@@ -408,6 +434,12 @@ export const createJobRepository = (database: Database.Database) => {
                 .run(internalId);
         },
 
+        /**
+         * Requeues jobs left in progress by a stopped worker.
+         *
+         * Recovery removes partial chapter and ZIP artifacts before this update runs, so a
+         * restarted worker can safely claim the job from the beginning.
+         */
         resetProcessingJobs() {
             database
                 .prepare(
@@ -447,6 +479,12 @@ export const createJobRepository = (database: Database.Database) => {
             return rows.map(rowToJob);
         },
 
+        /**
+         * Makes an expired job non-downloadable after file cleanup.
+         *
+         * Clearing both token hashes invalidates emailed links and browser-session downloads while
+         * preserving the public job record for status display.
+         */
         markExpired(internalId: string, now: string) {
             database
                 .prepare(
