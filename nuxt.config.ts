@@ -18,7 +18,7 @@ export default defineNuxtConfig({
     runtimeConfig: {
         appBaseUrl: "http://localhost:3000",
         storageRoot: "",
-        maxUploadBytes: "1073741824",
+        maxUploadBytes: "1610612736",
         maxQueuedJobs: "10",
         maxConcurrentUploads: "2",
         perIpUploadLimit: "5",
@@ -32,7 +32,7 @@ export default defineNuxtConfig({
         browserDownloadGrantLifetimeSeconds: "60",
         workerConcurrency: "1",
         jobRetentionHours: "12",
-        maxAudiobookDurationSeconds: "86400",
+        maxAudiobookDurationSeconds: "108000",
         maxChapters: "300",
         jobProcessingTimeoutSeconds: "14400",
         ffprobeTimeoutSeconds: "30",
