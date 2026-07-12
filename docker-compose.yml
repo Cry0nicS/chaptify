@@ -6,7 +6,8 @@ services:
         ports:
             - "3000:3000"
         env_file:
-            -   .env
+            - path: .env
+              required: false
         environment:
             NUXT_STORAGE_ROOT: /data/chaptify
         volumes:
@@ -22,7 +23,8 @@ services:
         image: chaptify:latest
         command: [node, .output/worker.mjs]
         env_file:
-            -   .env
+            - path: .env
+              required: false
         environment:
             NUXT_STORAGE_ROOT: /data/chaptify
         volumes:
@@ -35,7 +37,8 @@ services:
         image: chaptify:latest
         command: [node, .output/cleanup.mjs]
         env_file:
-            -   .env
+            - path: .env
+              required: false
         environment:
             NUXT_STORAGE_ROOT: /data/chaptify
         volumes:
