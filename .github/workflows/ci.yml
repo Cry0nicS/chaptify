@@ -44,10 +44,22 @@ jobs:
         run: npm run build
 
       - name: Create empty env file for compose validation
-        run: touch .env
+        run: |
+          touch .env
+          echo "NUXT_DOWNLOAD_SIGNING_SECRET=ci-download-signing-secret-with-32-chars" >> .env
 
       - name: Validate docker compose
         run: docker compose config
 
-      - name: Build Docker image
-        run: docker build -t chaptify:test .
+      - name: Build Docker Compose stack
+        run: docker compose build
+
+      - name: Start Docker Compose stack
+        run: docker compose up -d
+
+      - name: Smoke Docker Compose stack
+        run: npm run smoke:docker
+
+      - name: Stop Docker Compose stack
+        if: always()
+        run: docker compose down -v

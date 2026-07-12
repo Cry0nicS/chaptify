@@ -4,6 +4,7 @@ import {browserDownloadRequestSchema} from "../../../../shared/utils/schemas";
 import {createBackendContext} from "../../../utils/backend/context";
 import {hashBrowserJobAccessToken} from "../../../utils/backend/ids";
 import {ensurePathInside} from "../../../utils/backend/paths";
+import {checkDownloadRateLimit, getClientIp} from "../../../utils/backend/rate-limits";
 
 /**
  * POST /api/jobs/:jobId/download streams a ready ZIP to the original browser session.
@@ -14,6 +15,10 @@ import {ensurePathInside} from "../../../utils/backend/paths";
  */
 export default defineEventHandler(async (event) => {
     const {config, jobs} = await createBackendContext();
+    if (!checkDownloadRateLimit(getClientIp(event), config.downloadRateLimit, 60 * 1000)) {
+        throw createError({statusCode: 429, statusMessage: "Too many download requests"});
+    }
+
     const jobId = getRouterParam(event, "job-id") || "";
     const parsedBody = browserDownloadRequestSchema.safeParse(await readBody(event));
 

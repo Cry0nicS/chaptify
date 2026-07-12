@@ -20,7 +20,6 @@ services:
 
     worker:
         image: chaptify:latest
-        build: .
         command: [node, .output/worker.mjs]
         env_file:
             -   .env
@@ -29,6 +28,21 @@ services:
         volumes:
             - chaptify-storage:/data/chaptify
         restart: unless-stopped
+        depends_on:
+            - public-notice
+
+    cleanup:
+        image: chaptify:latest
+        command: [node, .output/cleanup.mjs]
+        env_file:
+            -   .env
+        environment:
+            NUXT_STORAGE_ROOT: /data/chaptify
+        volumes:
+            - chaptify-storage:/data/chaptify
+        restart: no
+        depends_on:
+            - public-notice
 
 volumes:
     chaptify-storage:

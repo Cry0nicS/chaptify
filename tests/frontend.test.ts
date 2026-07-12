@@ -1,4 +1,6 @@
 import type {JobStatusResponse} from "../shared/utils/types";
+import {readFile} from "node:fs/promises";
+import {join} from "node:path";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {effectScope, nextTick} from "vue";
 import {ACTIVE_JOB_STORAGE_KEY, useJobStatus} from "../app/composables/use-job-status";
@@ -404,5 +406,16 @@ describe("job status composable", () => {
 
         expect(fetchJobStatus).toHaveBeenCalledTimes(1);
         expect(status.isPolling.value).toBe(false);
+    });
+});
+
+describe("native browser download", () => {
+    it("does not buffer ZIP downloads through Blob or object URLs", async () => {
+        const pageSource = await readFile(join(process.cwd(), "app", "pages", "index.vue"), "utf8");
+
+        expect(pageSource).not.toContain(".blob()");
+        expect(pageSource).not.toContain("createObjectURL");
+        expect(pageSource).toContain('form.method = "POST"');
+        expect(pageSource).toContain('tokenInput.name = "jobAccessToken"');
     });
 });

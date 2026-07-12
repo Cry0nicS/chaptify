@@ -35,6 +35,22 @@ export const ensureEnoughStorage = async (
     }
 };
 
+export const getAvailableStorageBytes = async (storageRoot: string): Promise<number | null> => {
+    try {
+        const stats = await statfs(storageRoot);
+
+        return Number(stats.bavail) * Number(stats.bsize);
+    } catch {
+        return null;
+    }
+};
+
+export const calculateStorageReservationBytes = (
+    fileSize: number,
+    multiplier: number,
+    safetyBytes: number
+): number => fileSize * multiplier + safetyBytes;
+
 /**
  * Moves a completed multipart upload into its private job directory.
  *

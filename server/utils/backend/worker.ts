@@ -6,7 +6,7 @@ import {createChapterZip} from "./archive";
 import {runCleanup} from "./cleanup";
 import {normalizeBaseUrl} from "./config";
 import {PublicJobError} from "./errors";
-import {createDownloadToken, hashDownloadToken} from "./ids";
+import {createSignedDownloadToken} from "./ids";
 import {createMailgunService} from "./mailgun";
 import {inspectAudioFile, splitChapters} from "./media";
 import {ensurePathInside, jobDirectory} from "./paths";
@@ -16,40 +16,71 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export const deliverReadyEmail = async (
     config: BackendConfig,
     jobs: JobRepository,
-    job: JobRecord,
-    token: string
+    job: JobRecord
 ): Promise<void> => {
-    const mailgun = createMailgunService(config);
-    const downloadUrl = `${normalizeBaseUrl(config.appBaseUrl || "http://localhost:3000")}/api/download/${token}`;
-
-    while (job.email && job.emailAttempts < config.emailRetryAttempts) {
-        jobs.incrementEmailAttempt(job.internalId);
-
-        try {
-            await mailgun.sendCompletionEmail({
-                to: job.email,
-                downloadUrl,
-                expiresInHours: config.jobRetentionHours
-            });
-            jobs.markEmailSent(job.internalId, new Date().toISOString());
-            return;
-        } catch (error) {
-            console.warn("Completion email attempt failed", {
-                jobId: job.publicJobId,
-                attempt: job.emailAttempts + 1,
-                error: String(error)
-            });
-        }
-
-        const updatedJob = jobs.findByInternalId(job.internalId);
-        if (!updatedJob) {
-            break;
-        }
-
-        job = updatedJob;
+    if (!config.downloadSigningSecret) {
+        jobs.markEmailFailed(job.internalId, "missing_signing_secret");
+        return;
     }
 
-    jobs.markEmailFailed(job.internalId);
+    const mailgun = createMailgunService(config);
+    const token = createSignedDownloadToken({
+        publicJobId: job.publicJobId,
+        internalId: job.internalId,
+        expiresAt: job.expiresAt || "",
+        signingSecret: config.downloadSigningSecret
+    });
+    const downloadUrl = `${normalizeBaseUrl(config.appBaseUrl || "http://localhost:3000")}/api/download/${token}`;
+
+    if (!job.email || !job.expiresAt || job.emailAttempts >= config.emailRetryAttempts) {
+        jobs.markEmailFailed(job.internalId, "retry_limit_reached");
+        return;
+    }
+
+    if (new Date(job.expiresAt).getTime() <= Date.now()) {
+        jobs.markEmailFailed(job.internalId, "expired");
+        return;
+    }
+
+    try {
+        await mailgun.sendCompletionEmail({
+            to: job.email,
+            downloadUrl,
+            expiresInHours: config.jobRetentionHours
+        });
+        jobs.markEmailSent(job.internalId, new Date().toISOString());
+    } catch (error) {
+        const attempt = job.emailAttempts + 1;
+        const retryLimitReached = attempt >= config.emailRetryAttempts;
+        const baseDelayMs = config.emailRetryBaseDelaySeconds * 1000;
+        const maxDelayMs = config.emailRetryMaxDelaySeconds * 1000;
+        const exponentialDelay = Math.min(maxDelayMs, baseDelayMs * 2 ** Math.max(0, attempt - 1));
+        const jitter = Math.floor(Math.random() * Math.min(baseDelayMs, exponentialDelay));
+        const nextAttemptAt = retryLimitReached
+            ? null
+            : new Date(Date.now() + exponentialDelay + jitter).toISOString();
+        const safeFailure = String(error).slice(0, 160);
+
+        jobs.recordEmailAttempt(job.internalId, nextAttemptAt, safeFailure);
+        console.warn("Completion email attempt failed", {
+            jobId: job.publicJobId,
+            attempt,
+            error: safeFailure
+        });
+
+        if (retryLimitReached) {
+            jobs.markEmailFailed(job.internalId, "retry_limit_reached");
+        }
+    }
+};
+
+export const deliverDueEmails = async (config: BackendConfig, jobs: JobRepository) => {
+    const now = new Date().toISOString();
+    jobs.expirePendingEmails(now);
+
+    for (const job of jobs.listReadyEmailJobsDue(now, Math.max(1, config.workerConcurrency))) {
+        await deliverReadyEmail(config, jobs, job);
+    }
 };
 
 /**
@@ -93,24 +124,17 @@ export const processJob = async (
             archiveName,
             chapterPaths
         );
-        const token = createDownloadToken();
         const completedAt = new Date();
         const expiresAt = new Date(
             completedAt.getTime() + config.jobRetentionHours * 60 * 60 * 1000
         ).toISOString();
-        jobs.markReady(
-            job.internalId,
-            zipPath,
-            hashDownloadToken(token),
-            completedAt.toISOString(),
-            expiresAt
-        );
+        jobs.markReady(job.internalId, zipPath, null, completedAt.toISOString(), expiresAt);
         await rm(chaptersDirectory, {recursive: true, force: true});
         await rm(job.sourcePath, {force: true});
 
         const freshJob = jobs.findByInternalId(job.internalId);
         if (freshJob?.email) {
-            await deliverReadyEmail(config, jobs, freshJob, token);
+            await deliverReadyEmail(config, jobs, freshJob);
         }
     } catch (error) {
         const publicError =
@@ -184,6 +208,7 @@ export const runWorkerLoop = async (config: BackendConfig, jobs: JobRepository) 
         }
 
         await runCleanup(config.storageRoot, jobs);
+        await deliverDueEmails(config, jobs);
 
         while (activeJobs.size < config.workerConcurrency) {
             if (shuttingDown) {

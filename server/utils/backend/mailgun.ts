@@ -13,6 +13,25 @@ const maskEmail = (email: string): string => {
     return `${local?.slice(0, 2) || "**"}***@${domain || "***"}`;
 };
 
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+
+    try {
+        return await Promise.race([
+            promise,
+            new Promise<never>((_, reject) => {
+                timeout = setTimeout(() => {
+                    reject(new Error("Mailgun request timed out"));
+                }, timeoutMs);
+            })
+        ]);
+    } finally {
+        if (timeout) {
+            clearTimeout(timeout);
+        }
+    }
+};
+
 /**
  * Creates the Mailgun adapter used by the worker after ZIP finalization.
  *
@@ -56,14 +75,17 @@ export const createMailgunService = (config: BackendConfig) => {
             ].join("");
 
             try {
-                await client.messages.create(config.mailgunDomain, {
-                    from: config.mailgunSender,
-                    to: input.to,
-                    ...(bcc ? {bcc} : {}),
-                    subject: "Your Chaptify audiobook is ready",
-                    text,
-                    html
-                });
+                await withTimeout(
+                    client.messages.create(config.mailgunDomain, {
+                        from: config.mailgunSender,
+                        to: input.to,
+                        ...(bcc ? {bcc} : {}),
+                        subject: "Your Chaptify audiobook is ready",
+                        text,
+                        html
+                    }),
+                    15_000
+                );
             } catch (error) {
                 throw new Error(
                     `Mailgun delivery failed for ${maskEmail(input.to)}: ${String(error)}`

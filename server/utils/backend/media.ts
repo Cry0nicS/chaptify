@@ -27,7 +27,9 @@ const ffprobeOutputSchema = z.object({
         })
     ),
     format: z.object({
-        duration: z.coerce.number()
+        duration: z.coerce.number(),
+        format_name: z.string().optional(),
+        tags: z.record(z.string(), z.unknown()).optional()
     }),
     chapters: z.array(ffprobeChapterSchema).optional().default([])
 });
@@ -43,7 +45,31 @@ export interface MediaInspection {
     audioCodec: string;
     chapters: ChapterInfo[];
     outputExtension: "mp3" | "m4a";
+    bookTitle: string | null;
 }
+
+const chooseOutputExtension = (
+    audioCodec: string,
+    formatName: string | undefined
+): "mp3" | "m4a" => {
+    const formats = new Set((formatName || "").split(","));
+
+    if (audioCodec === "mp3" && formats.has("mp3")) {
+        return "mp3";
+    }
+
+    if (
+        audioCodec === "aac" &&
+        ["mov", "mp4", "m4a", "3gp", "3g2", "mj2"].some((name) => formats.has(name))
+    ) {
+        return "m4a";
+    }
+
+    throw new PublicJobError(
+        "UNSUPPORTED_FILE_TYPE",
+        `Unsupported codec/container: ${audioCodec}/${formatName || "unknown"}`
+    );
+};
 
 /**
  * Validates chapter ranges before any FFmpeg output paths are created.
@@ -82,7 +108,7 @@ export const validateChapters = (chapters: ChapterInfo[], duration: number): voi
  */
 export const inspectAudioFile = async (
     sourcePath: string,
-    sourceFormat: "mp3" | "m4b"
+    _sourceFormat: "mp3" | "m4b"
 ): Promise<MediaInspection> => {
     let parsed: z.infer<typeof ffprobeOutputSchema>;
 
@@ -130,13 +156,62 @@ export const inspectAudioFile = async (
     }));
 
     validateChapters(chapters, parsed.format.duration);
+    const bookTitle =
+        typeof parsed.format.tags?.title === "string" && parsed.format.tags.title.trim()
+            ? parsed.format.tags.title.trim()
+            : null;
 
     return {
         duration: parsed.format.duration,
         audioCodec: audioStream.codec_name,
         chapters,
-        outputExtension: sourceFormat === "mp3" ? "mp3" : "m4a"
+        outputExtension: chooseOutputExtension(audioStream.codec_name, parsed.format.format_name),
+        bookTitle
     };
+};
+
+const verifyChapterOutput = async (
+    outputPath: string,
+    chapter: ChapterInfo,
+    expectedTitle: string,
+    expectedTrack: string
+) => {
+    const result = await runProcess(
+        "ffprobe",
+        [
+            "-v",
+            "error",
+            "-show_format",
+            "-show_streams",
+            "-show_chapters",
+            "-print_format",
+            "json",
+            outputPath
+        ],
+        FFPROBE_TIMEOUT_MS
+    );
+    const parsed = ffprobeOutputSchema.parse(JSON.parse(result.stdout));
+    const audioStreams = parsed.streams.filter((stream) => stream.codec_type === "audio");
+    const nonAudioStreams = parsed.streams.filter((stream) => stream.codec_type !== "audio");
+    const duration = parsed.format.duration;
+    const requestedDuration = chapter.end - chapter.start;
+    const tags = parsed.format.tags || {};
+
+    if (audioStreams.length !== 1 || nonAudioStreams.length > 0) {
+        throw new Error("Chapter output stream layout was invalid");
+    }
+
+    if (parsed.chapters.length > 0) {
+        throw new Error("Chapter output inherited an embedded chapter table");
+    }
+
+    if (!Number.isFinite(duration) || Math.abs(duration - requestedDuration) > 1.5) {
+        throw new Error("Chapter output duration did not match the requested range");
+    }
+
+    if (tags.title !== expectedTitle || tags.track !== expectedTrack) {
+        throw new Error("Chapter output metadata was invalid");
+    }
 };
 
 /**
@@ -169,6 +244,14 @@ export const splitChapters = async (
             }
 
             const outputPath = ensurePathInside(storageRoot, join(safeChapterDirectory, filename));
+            const chapterTitle = filename.slice(
+                filename.indexOf(" - ") + 3,
+                -`.${inspection.outputExtension}`.length
+            );
+            const track = `${index + 1}/${inspection.chapters.length}`;
+            const metadataArgs = inspection.bookTitle
+                ? ["-metadata", `album=${inspection.bookTitle}`]
+                : [];
             await runProcess(
                 "ffmpeg",
                 [
@@ -184,11 +267,20 @@ export const splitChapters = async (
                     sourcePath,
                     "-map",
                     "0:a:0",
+                    "-map_chapters",
+                    "-1",
+                    "-map_metadata",
+                    "-1",
                     "-vn",
                     "-sn",
                     "-dn",
                     "-c:a",
                     "copy",
+                    "-metadata",
+                    `title=${chapterTitle}`,
+                    "-metadata",
+                    `track=${track}`,
+                    ...metadataArgs,
                     outputPath
                 ],
                 FFMPEG_TIMEOUT_MS
@@ -197,6 +289,7 @@ export const splitChapters = async (
             if (outputStats.size === 0) {
                 throw new Error("Empty chapter output");
             }
+            await verifyChapterOutput(outputPath, chapter, chapterTitle, track);
 
             outputPaths.push(outputPath);
             onChapterComplete(index + 1, inspection.chapters.length);

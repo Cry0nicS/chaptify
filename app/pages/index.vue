@@ -194,12 +194,6 @@ const handleCreatedJob = (created: UploadJobResponse) => {
     startPolling(created.jobId, created.jobAccessToken);
 };
 
-const parseDownloadFilename = (contentDisposition: string | null): string => {
-    const match = contentDisposition?.match(/filename="([^"]+)"/);
-
-    return match?.[1] || "chaptify-chapters.zip";
-};
-
 const downloadReadyJob = async () => {
     if (workflow.value.status !== "ready" || !activeJobAccessToken.value || !import.meta.client) {
         return;
@@ -214,30 +208,19 @@ const downloadReadyJob = async () => {
     isBrowserDownloadStarting.value = true;
 
     try {
-        const response = await fetch(
-            `/api/jobs/${encodeURIComponent(workflow.value.job.jobId)}/download`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({jobAccessToken: activeJobAccessToken.value})
-            }
-        );
+        const form = document.createElement("form");
+        const tokenInput = document.createElement("input");
 
-        if (!response.ok) {
-            throw new Error("The direct download is no longer available.");
-        }
-
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = parseDownloadFilename(response.headers.get("Content-Disposition"));
-        document.body.append(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
+        form.method = "POST";
+        form.action = `/api/jobs/${encodeURIComponent(workflow.value.job.jobId)}/download`;
+        form.hidden = true;
+        tokenInput.type = "hidden";
+        tokenInput.name = "jobAccessToken";
+        tokenInput.value = activeJobAccessToken.value;
+        form.append(tokenInput);
+        document.body.append(form);
+        form.submit();
+        form.remove();
     } catch {
         browserDownloadError.value =
             "The direct download could not be started. The emailed link may still work until expiration.";
