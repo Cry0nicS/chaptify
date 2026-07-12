@@ -1,6 +1,9 @@
 import {ensureStorageRoot, getBackendConfigFromEnv} from "./utils/backend/config";
 import {createJobRepository, openDatabase} from "./utils/backend/database";
+import {loadDotenv} from "./utils/backend/env";
 import {runWorkerLoop} from "./utils/backend/worker";
+
+loadDotenv();
 
 const main = async () => {
     const config = getBackendConfigFromEnv();

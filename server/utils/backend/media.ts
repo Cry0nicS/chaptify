@@ -45,6 +45,12 @@ export interface MediaInspection {
     outputExtension: "mp3" | "m4a";
 }
 
+/**
+ * Validates chapter ranges before any FFmpeg output paths are created.
+ *
+ * Chapters must be ordered, non-overlapping, positive-length ranges inside the probed duration.
+ * A small end-time tolerance accounts for container rounding in embedded chapter metadata.
+ */
 export const validateChapters = (chapters: ChapterInfo[], duration: number): void => {
     let previousStart = -1;
     let previousEnd = 0;
@@ -67,6 +73,13 @@ export const validateChapters = (chapters: ChapterInfo[], duration: number): voi
     }
 };
 
+/**
+ * Reads trusted media facts from ffprobe and converts them to Chaptify's processing plan.
+ *
+ * The first audio stream determines whether the file is processable, while embedded chapters are
+ * the only supported split source. The output extension follows the uploaded container because
+ * chapter splitting uses stream copy instead of re-encoding.
+ */
 export const inspectAudioFile = async (
     sourcePath: string,
     sourceFormat: "mp3" | "m4b"
@@ -126,6 +139,13 @@ export const inspectAudioFile = async (
     };
 };
 
+/**
+ * Stream-copies one output file per validated chapter.
+ *
+ * FFmpeg receives an argument array, maps only the first audio stream, and drops video, subtitle,
+ * and data streams from chapter files. If any chapter fails or produces an empty file, all partial
+ * chapter output is removed before the public processing failure is reported.
+ */
 export const splitChapters = async (
     storageRoot: string,
     sourcePath: string,

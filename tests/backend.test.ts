@@ -4,14 +4,20 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {createChapterZip} from "../server/utils/backend/archive";
-import {ensureStorageRoot} from "../server/utils/backend/config";
+import {ensureStorageRoot, getBackendConfigFromEnv} from "../server/utils/backend/config";
 import {
     createJobRepository,
     openDatabase,
     resetDatabaseForTests
 } from "../server/utils/backend/database";
+import {loadDotenv, parseDotenv} from "../server/utils/backend/env";
 import {PublicJobError, serializePublicError} from "../server/utils/backend/errors";
-import {createDownloadToken, hashDownloadToken} from "../server/utils/backend/ids";
+import {
+    createBrowserJobAccessToken,
+    createDownloadToken,
+    hashBrowserJobAccessToken,
+    hashDownloadToken
+} from "../server/utils/backend/ids";
 import {validateChapters} from "../server/utils/backend/media";
 import {
     buildChapterFilenames,
@@ -82,7 +88,8 @@ const createQueuedJob = (jobs: ReturnType<typeof createJobRepository>, storageRo
         fileSize: 100,
         email: "reader@example.test",
         sourcePath: join(storageRoot, "jobs", "internal-job-id", "source", "source.m4b"),
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        browserJobAccessTokenHash: hashBrowserJobAccessToken("browser-token")
     });
 };
 
@@ -129,6 +136,82 @@ describe("public validation and filenames", () => {
     });
 });
 
+describe("runtime environment loading", () => {
+    it("parses dotenv values and ignores comments", () => {
+        expect(
+            parseDotenv(`
+                # comment
+                NUXT_MAILGUN_DOMAIN=mg.example.test
+                NUXT_MAILGUN_KEY="key-test"
+                NUXT_MAILGUN_SENDER='Chaptify <sender@example.test>'
+                export NUXT_MAILGUN_BCC=bcc@example.test # optional recipient
+            `)
+        ).toEqual({
+            NUXT_MAILGUN_DOMAIN: "mg.example.test",
+            NUXT_MAILGUN_KEY: "key-test",
+            NUXT_MAILGUN_SENDER: "Chaptify <sender@example.test>",
+            NUXT_MAILGUN_BCC: "bcc@example.test"
+        });
+    });
+
+    it("loads Mailgun values from .env without overriding shell values", async () => {
+        const root = await mkdtemp(join(tmpdir(), "chaptify-env-"));
+        await writeFile(
+            join(root, ".env"),
+            [
+                "NUXT_APP_BASE_URL=https://example.test",
+                "NUXT_STORAGE_ROOT=/tmp/chaptify",
+                "NUXT_MAILGUN_BASE_URL=https://api.mailgun.test",
+                "NUXT_MAILGUN_DOMAIN=mg.example.test",
+                "NUXT_MAILGUN_KEY=key-from-file",
+                "NUXT_MAILGUN_SENDER=sender@example.test",
+                "NUXT_MAILGUN_RECIPIENT=recipient@example.test"
+            ].join("\n")
+        );
+        const env: NodeJS.ProcessEnv = {
+            NUXT_MAILGUN_KEY: "key-from-shell"
+        };
+
+        loadDotenv(root, env);
+
+        expect(env.CHAPTIFY_APP_BASE_URL).toBe("https://example.test");
+        expect(env.NUXT_APP_BASE_URL).toBeUndefined();
+        expect(env.NUXT_MAILGUN_KEY).toBe("key-from-shell");
+        expect(env.NUXT_MAILGUN_DOMAIN).toBe("mg.example.test");
+    });
+
+    it("keeps getBackendConfigFromEnv aligned with loaded Mailgun config", async () => {
+        const root = await mkdtemp(join(tmpdir(), "chaptify-env-"));
+        await writeFile(
+            join(root, ".env"),
+            [
+                "NUXT_APP_BASE_URL=https://example.test",
+                "NUXT_STORAGE_ROOT=/tmp/chaptify",
+                "NUXT_MAILGUN_BASE_URL=https://api.mailgun.test",
+                "NUXT_MAILGUN_DOMAIN=mg.example.test",
+                "NUXT_MAILGUN_KEY=key-test",
+                "NUXT_MAILGUN_SENDER=sender@example.test"
+            ].join("\n")
+        );
+        const previousEnv = {...process.env};
+
+        try {
+            process.env = {};
+            loadDotenv(root);
+
+            expect(getBackendConfigFromEnv()).toMatchObject({
+                appBaseUrl: "https://example.test",
+                mailgunBaseUrl: "https://api.mailgun.test",
+                mailgunDomain: "mg.example.test",
+                mailgunKey: "key-test",
+                mailgunSender: "sender@example.test"
+            });
+        } finally {
+            process.env = previousEnv;
+        }
+    });
+});
+
 describe("chapter metadata", () => {
     it("accepts ordered valid chapter ranges", () => {
         expect(() =>
@@ -171,6 +254,15 @@ describe("tokens and persistence", () => {
     it("generates hash-only download token values", () => {
         const token = createDownloadToken();
         const hash = hashDownloadToken(token);
+
+        expect(token).not.toBe(hash);
+        expect(token.length).toBeGreaterThanOrEqual(40);
+        expect(hash).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it("generates hash-only browser job access token values", () => {
+        const token = createBrowserJobAccessToken();
+        const hash = hashBrowserJobAccessToken(token);
 
         expect(token).not.toBe(hash);
         expect(token.length).toBeGreaterThanOrEqual(40);
@@ -239,6 +331,37 @@ describe("tokens and persistence", () => {
         expect(
             jobs.findReadyByTokenHash(hashDownloadToken("token"), "2026-07-11T13:00:00.000Z")
         ).toBeNull();
+    });
+
+    it("finds ready jobs by browser access token without using the download token", async () => {
+        const {storageRoot, jobs} = await createRepository();
+        createQueuedJob(jobs, storageRoot);
+        jobs.claimQueuedJob(new Date().toISOString());
+        jobs.markReady(
+            "internal-job-id",
+            join(storageRoot, "jobs", "internal-job-id", "output", "book.zip"),
+            hashDownloadToken("download-token"),
+            "2026-07-11T12:00:00.000Z",
+            "2026-07-11T13:00:00.000Z"
+        );
+
+        expect(
+            jobs.findReadyByBrowserAccess(
+                "public-job-id",
+                hashBrowserJobAccessToken("browser-token"),
+                "2026-07-11T12:30:00.000Z"
+            )?.publicJobId
+        ).toBe("public-job-id");
+        expect(
+            jobs.findReadyByBrowserAccess(
+                "public-job-id",
+                hashBrowserJobAccessToken("download-token"),
+                "2026-07-11T12:30:00.000Z"
+            )
+        ).toBeNull();
+
+        jobs.markExpired("internal-job-id", "2026-07-11T13:00:00.000Z");
+        expect(jobs.findByPublicId("public-job-id")?.browserJobAccessTokenHash).toBeNull();
     });
 });
 

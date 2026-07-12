@@ -5,6 +5,12 @@ import {ZipArchive} from "archiver";
 import {PublicJobError} from "./errors";
 import {ensurePathInside} from "./paths";
 
+/**
+ * Streams chapter files into the final ZIP archive under the job output directory.
+ *
+ * The archive is finalized through the output stream instead of buffering file contents in memory.
+ * Empty or partially-created archives are deleted before surfacing a public ZIP failure.
+ */
 export const createChapterZip = async (
     storageRoot: string,
     outputDirectory: string,

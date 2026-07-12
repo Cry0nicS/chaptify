@@ -24,6 +24,8 @@ const workflow = ref<WorkflowState>({status: "idle"});
 const pageError = ref<FrontendApiError | null>(null);
 const submittedEmail = ref<string | null>(null);
 const visibleProgress = ref(0);
+const browserDownloadError = ref<string | null>(null);
+const isBrowserDownloadStarting = ref(false);
 const beforeUnload = (event: BeforeUnloadEvent) => {
     event.preventDefault();
     event.returnValue = "";
@@ -31,6 +33,7 @@ const beforeUnload = (event: BeforeUnloadEvent) => {
 
 const {abortUpload, isUploading, progress: uploadProgress, uploadJob} = useJobUpload();
 const {
+    activeJobAccessToken,
     activeJobId,
     clearActiveJob,
     isRecovering,
@@ -74,6 +77,9 @@ const terminalJob = computed(() =>
     workflow.value.status === "expired"
         ? workflow.value.job
         : null
+);
+const canBrowserDownload = computed(
+    () => workflow.value.status === "ready" && Boolean(activeJobAccessToken.value)
 );
 
 definePageMeta({
@@ -185,7 +191,59 @@ const handleCreatedJob = (created: UploadJobResponse) => {
         job: queuedJob,
         submittedEmail: submittedEmail.value
     };
-    startPolling(created.jobId);
+    startPolling(created.jobId, created.jobAccessToken);
+};
+
+const parseDownloadFilename = (contentDisposition: string | null): string => {
+    const match = contentDisposition?.match(/filename="([^"]+)"/);
+
+    return match?.[1] || "chaptify-chapters.zip";
+};
+
+const downloadReadyJob = async () => {
+    if (workflow.value.status !== "ready" || !activeJobAccessToken.value || !import.meta.client) {
+        return;
+    }
+
+    /*
+     * The browser download path uses the session-scoped job-access token, not the emailed ZIP
+     * token. This lets users recover a ready upload in the same tab session without exposing the
+     * Mailgun link credential to frontend state.
+     */
+    browserDownloadError.value = null;
+    isBrowserDownloadStarting.value = true;
+
+    try {
+        const response = await fetch(
+            `/api/jobs/${encodeURIComponent(workflow.value.job.jobId)}/download`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({jobAccessToken: activeJobAccessToken.value})
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error("The direct download is no longer available.");
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = parseDownloadFilename(response.headers.get("Content-Disposition"));
+        document.body.append(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    } catch {
+        browserDownloadError.value =
+            "The direct download could not be started. The emailed link may still work until expiration.";
+    } finally {
+        isBrowserDownloadStarting.value = false;
+    }
 };
 
 const submitUpload = async () => {
@@ -226,6 +284,7 @@ const startOver = () => {
     email.value = "";
     submittedEmail.value = null;
     pageError.value = null;
+    browserDownloadError.value = null;
     visibleProgress.value = 0;
     workflow.value = {status: "idle"};
 };
@@ -361,6 +420,10 @@ onBeforeUnmount(() => {
             <JobResult
                 v-if="terminalJob"
                 :job="terminalJob"
+                :can-browser-download="canBrowserDownload"
+                :browser-download-error="browserDownloadError"
+                :is-browser-download-starting="isBrowserDownloadStarting"
+                @download="downloadReadyJob"
                 @start-over="startOver" />
 
             <div
