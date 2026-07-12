@@ -21,20 +21,6 @@ export const detectUploadExtension = (filename: string): "mp3" | "m4b" | null =>
     return null;
 };
 
-export const ensureEnoughStorage = async (
-    storageRoot: string,
-    requiredBytes: number
-): Promise<boolean> => {
-    try {
-        const stats = await statfs(storageRoot);
-        const availableBytes = Number(stats.bavail) * Number(stats.bsize);
-
-        return availableBytes > requiredBytes * 2;
-    } catch {
-        return true;
-    }
-};
-
 export const getAvailableStorageBytes = async (storageRoot: string): Promise<number | null> => {
     try {
         const stats = await statfs(storageRoot);
@@ -61,7 +47,8 @@ export const calculateStorageReservationBytes = (
 export const createJobStorage = async (
     storageRoot: string,
     tempUploadPath: string,
-    originalFilename: string
+    originalFilename: string,
+    internalId = createInternalId()
 ): Promise<StoredUpload> => {
     const sourceFormat = detectUploadExtension(originalFilename);
 
@@ -71,7 +58,6 @@ export const createJobStorage = async (
     }
 
     const stats = await stat(tempUploadPath);
-    const internalId = createInternalId();
     const directory = jobDirectory(storageRoot, internalId);
     const sourceDirectory = ensurePathInside(storageRoot, join(directory, "source"));
     const chaptersDirectory = ensurePathInside(storageRoot, join(directory, "chapters"));

@@ -8,6 +8,7 @@ import {createBackendContext} from "../../utils/backend/context";
 import {PublicJobError} from "../../utils/backend/errors";
 import {
     createBrowserJobAccessToken,
+    createInternalId,
     createPublicId,
     hashBrowserJobAccessToken
 } from "../../utils/backend/ids";
@@ -30,6 +31,7 @@ import {
 const fieldsSchema = z.object({
     email: z.string().email().max(320)
 });
+const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
 
 const collectUploadedFilePaths = (files: formidable.Files): string[] =>
     Object.values(files)
@@ -40,7 +42,8 @@ const collectUploadedFilePaths = (files: formidable.Files): string[] =>
 const parseMultipartUpload = async (
     event: H3Event,
     storageRoot: string,
-    maxUploadBytes: number
+    maxUploadBytes: number,
+    onFileBegin: (path: string) => void
 ) => {
     const uploadDirectory = ensurePathInside(storageRoot, join(storageRoot, "uploads"));
     await mkdir(uploadDirectory, {recursive: true, mode: 0o700});
@@ -55,7 +58,7 @@ const parseMultipartUpload = async (
         allowEmptyFiles: false,
         filter(part) {
             if (part.name !== "file") {
-                return true;
+                return false;
             }
 
             return Boolean(part.originalFilename && detectUploadExtension(part.originalFilename));
@@ -69,6 +72,11 @@ const parseMultipartUpload = async (
         fields: formidable.Fields;
         files: formidable.Files;
     }>((resolve, reject) => {
+        form.on("fileBegin", (_name, file) => {
+            if (file.filepath) {
+                onFileBegin(file.filepath);
+            }
+        });
         form.parse(event.node.req, (error, fields, files) => {
             if (error) {
                 reject(error);
@@ -78,6 +86,18 @@ const parseMultipartUpload = async (
             resolve({fields, files});
         });
     });
+};
+
+const estimateUploadReservationBytes = (event: H3Event, maxUploadBytes: number): number => {
+    const contentLengthHeader = getHeader(event, "content-length");
+    const contentLength =
+        typeof contentLengthHeader === "string" ? Number(contentLengthHeader) : Number.NaN;
+
+    if (Number.isFinite(contentLength) && contentLength > 0) {
+        return Math.min(contentLength, maxUploadBytes + MULTIPART_OVERHEAD_BYTES);
+    }
+
+    return maxUploadBytes + MULTIPART_OVERHEAD_BYTES;
 };
 
 /**
@@ -119,7 +139,7 @@ export default defineEventHandler(async (event) => {
     }
 
     const contentLength = Number(getHeader(event, "content-length") || 0);
-    if (contentLength > config.maxUploadBytes) {
+    if (contentLength > config.maxUploadBytes + MULTIPART_OVERHEAD_BYTES) {
         releaseUploadSlot();
         throw createError({
             statusCode: 413,
@@ -130,7 +150,8 @@ export default defineEventHandler(async (event) => {
 
     let tempPaths: string[] = [];
     let tempPath: string | null = null;
-    let reservationOwnerId: string | null = null;
+    const internalId = createInternalId();
+    let reservationOwnerId: string | null = internalId;
     let storedInternalId: string | null = null;
 
     try {
@@ -147,7 +168,49 @@ export default defineEventHandler(async (event) => {
             });
         }
 
-        const parsed = await parseMultipartUpload(event, config.storageRoot, config.maxUploadBytes);
+        const availableBytes = await getAvailableStorageBytes(config.storageRoot);
+        if (availableBytes === null && process.env.NODE_ENV === "production") {
+            throw new PublicJobError("STORAGE_CAPACITY_EXCEEDED");
+        }
+
+        if (availableBytes !== null) {
+            const now = new Date();
+            const estimatedUploadBytes = estimateUploadReservationBytes(
+                event,
+                config.maxUploadBytes
+            );
+            const reservedBytes = calculateStorageReservationBytes(
+                estimatedUploadBytes,
+                config.storageReservationMultiplier,
+                config.storageReservationSafetyBytes
+            );
+            const reserved = jobs.createStorageReservationIfCapacity(
+                {
+                    ownerId: internalId,
+                    reservedBytes,
+                    createdAt: now.toISOString(),
+                    expiresAt: new Date(
+                        now.getTime() + config.storageReservationTtlMinutes * 60 * 1000
+                    ).toISOString()
+                },
+                availableBytes
+            );
+
+            if (!reserved) {
+                throw new PublicJobError("STORAGE_CAPACITY_EXCEEDED");
+            }
+        } else {
+            reservationOwnerId = null;
+        }
+
+        const parsed = await parseMultipartUpload(
+            event,
+            config.storageRoot,
+            config.maxUploadBytes,
+            (path) => {
+                tempPaths.push(path);
+            }
+        );
         tempPaths = collectUploadedFilePaths(parsed.files);
         const emailValues = Array.isArray(parsed.fields.email)
             ? parsed.fields.email
@@ -186,46 +249,17 @@ export default defineEventHandler(async (event) => {
             extension
         });
 
-        const availableBytes = await getAvailableStorageBytes(config.storageRoot);
-        if (availableBytes === null && process.env.NODE_ENV === "production") {
-            throw new PublicJobError("STORAGE_CAPACITY_EXCEEDED");
-        }
-
-        if (availableBytes !== null) {
-            const now = new Date();
-            reservationOwnerId = `upload-${crypto.randomUUID()}`;
-            const reservedBytes = calculateStorageReservationBytes(
-                fileSize,
-                config.storageReservationMultiplier,
-                config.storageReservationSafetyBytes
-            );
-            const reserved = jobs.createStorageReservationIfCapacity(
-                {
-                    ownerId: reservationOwnerId,
-                    reservedBytes,
-                    createdAt: now.toISOString(),
-                    expiresAt: new Date(
-                        now.getTime() + config.storageReservationTtlMinutes * 60 * 1000
-                    ).toISOString()
-                },
-                availableBytes
-            );
-
-            if (!reserved) {
-                throw new PublicJobError("STORAGE_CAPACITY_EXCEEDED");
-            }
-        }
-
         if (!tempPath) {
             throw new PublicJobError("UNSUPPORTED_FILE_TYPE", "Upload temp file was not available");
         }
 
-        const storedUpload = await createJobStorage(config.storageRoot, tempPath, originalFilename);
+        const storedUpload = await createJobStorage(
+            config.storageRoot,
+            tempPath,
+            originalFilename,
+            internalId
+        );
         storedInternalId = storedUpload.internalId;
-        if (reservationOwnerId) {
-            jobs.transferStorageReservation(reservationOwnerId, storedUpload.internalId);
-            reservationOwnerId = storedUpload.internalId;
-        }
 
         tempPath = null;
         tempPaths = [];

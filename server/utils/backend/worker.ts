@@ -100,10 +100,23 @@ export const processJob = async (
     const outputDirectory = ensurePathInside(config.storageRoot, join(directory, "output"));
     await mkdir(chaptersDirectory, {recursive: true, mode: 0o700});
     await mkdir(outputDirectory, {recursive: true, mode: 0o700});
+    const abortController = new AbortController();
+    const deadlineMs = Date.now() + config.jobProcessingTimeoutSeconds * 1000;
+    const deadlineTimer = setTimeout(() => {
+        abortController.abort();
+    }, config.jobProcessingTimeoutSeconds * 1000);
+    const mediaOptions = {
+        maxAudiobookDurationSeconds: config.maxAudiobookDurationSeconds,
+        maxChapters: config.maxChapters,
+        ffprobeTimeoutMs: config.ffprobeTimeoutSeconds * 1000,
+        ffmpegChapterTimeoutMs: config.ffmpegChapterTimeoutSeconds * 1000,
+        deadlineMs,
+        signal: abortController.signal
+    };
 
     try {
         jobs.updateProgress(job.internalId, 10);
-        const inspection = await inspectAudioFile(job.sourcePath, job.sourceFormat);
+        const inspection = await inspectAudioFile(job.sourcePath, job.sourceFormat, mediaOptions);
         jobs.updateProgress(job.internalId, 20, 0, inspection.chapters.length);
         const chapterPaths = await splitChapters(
             config.storageRoot,
@@ -113,7 +126,8 @@ export const processJob = async (
             (currentChapter, totalChapters) => {
                 const progress = 20 + Math.floor((currentChapter / totalChapters) * 55);
                 jobs.updateProgress(job.internalId, progress, currentChapter, totalChapters);
-            }
+            },
+            mediaOptions
         );
 
         jobs.updateProgress(job.internalId, 82);
@@ -148,6 +162,10 @@ export const processJob = async (
             new Date().toISOString()
         );
         await rm(chaptersDirectory, {recursive: true, force: true});
+        await rm(outputDirectory, {recursive: true, force: true});
+        jobs.releaseStorageReservation(job.internalId, new Date().toISOString());
+    } finally {
+        clearTimeout(deadlineTimer);
     }
 };
 
@@ -180,7 +198,7 @@ export const recoverInterruptedJobs = async (config: BackendConfig, jobs: JobRep
     }
 
     jobs.resetProcessingJobs();
-    await runCleanup(config.storageRoot, jobs);
+    await runCleanup(config, jobs);
 };
 
 /**
@@ -207,7 +225,7 @@ export const runWorkerLoop = async (config: BackendConfig, jobs: JobRepository) 
             break;
         }
 
-        await runCleanup(config.storageRoot, jobs);
+        await runCleanup(config, jobs);
         await deliverDueEmails(config, jobs);
 
         while (activeJobs.size < config.workerConcurrency) {

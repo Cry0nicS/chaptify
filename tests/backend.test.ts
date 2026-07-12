@@ -69,8 +69,23 @@ const makeConfig = (storageRoot: string): BackendConfig => ({
     storageRoot,
     maxUploadBytes: 1024,
     maxQueuedJobs: 10,
+    maxConcurrentUploads: 2,
+    perIpUploadLimit: 5,
+    perIpJobLimit: 5,
+    downloadRateLimit: 30,
+    storageReservationMultiplier: 4,
+    storageReservationSafetyBytes: 0,
+    storageReservationTtlMinutes: 30,
+    orphanJobDirectoryMinAgeMinutes: 30,
+    cleanupIntervalSeconds: 300,
+    browserDownloadGrantLifetimeSeconds: 60,
     workerConcurrency: 1,
     jobRetentionHours: DEFAULT_JOB_RETENTION_HOURS,
+    maxAudiobookDurationSeconds: 86_400,
+    maxChapters: 300,
+    jobProcessingTimeoutSeconds: 14_400,
+    ffprobeTimeoutSeconds: 30,
+    ffmpegChapterTimeoutSeconds: 1_200,
     emailRetryAttempts: 3,
     downloadSigningSecret: "test-signing-secret-with-at-least-32-characters",
     emailRetryBaseDelaySeconds: 1,
@@ -513,7 +528,7 @@ describe("synthetic ffmpeg end-to-end media", () => {
             database
                 .prepare("UPDATE jobs SET expires_at = ? WHERE internal_id = ?")
                 .run("2026-07-11T00:00:00.000Z", ready.internalId);
-            await runCleanup(storageRoot, jobs);
+            await runCleanup(makeConfig(storageRoot), jobs);
             await expect(access(ready.zipPath)).rejects.toThrow();
         }
     );
@@ -709,7 +724,7 @@ describe("tokens and persistence", () => {
             )
         ).toBe(true);
 
-        await runCleanup(storageRoot, jobs);
+        await runCleanup(makeConfig(storageRoot), jobs);
         jobs.releaseExpiredStorageReservations("2026-07-11T12:31:00.000Z");
         expect(
             jobs.createStorageReservationIfCapacity(
@@ -722,6 +737,29 @@ describe("tokens and persistence", () => {
                 100
             )
         ).toBe(true);
+    });
+
+    it("keeps expired-TTL reservations for live jobs", async () => {
+        const {storageRoot, jobs} = await createRepository();
+        createQueuedJob(jobs, storageRoot);
+        expect(
+            jobs.createStorageReservationIfCapacity(
+                {
+                    ownerId: "internal-job-id",
+                    reservedBytes: 80,
+                    createdAt: "2026-07-11T12:00:00.000Z",
+                    expiresAt: "2026-07-11T12:30:00.000Z"
+                },
+                100
+            )
+        ).toBe(true);
+
+        jobs.releaseExpiredStorageReservations("2026-07-11T12:31:00.000Z");
+
+        expect(jobs.getActiveStorageReservation("internal-job-id")).toMatchObject({
+            ownerId: "internal-job-id",
+            reservedBytes: 80
+        });
     });
 });
 
@@ -763,12 +801,32 @@ describe("cleanup and archive safety", () => {
         await mkdir(orphanDirectory, {recursive: true});
         await writeFile(join(orphanDirectory, "file.txt"), "orphan");
 
-        await runCleanup(storageRoot, jobs);
+        await runCleanup({...makeConfig(storageRoot), orphanJobDirectoryMinAgeMinutes: 0}, jobs);
 
         const failed = jobs.findByInternalId("internal-job-id");
         expect(failed?.email).toBeNull();
         expect(failed?.displayFilename).toBe("audiobook");
         await expect(access(orphanDirectory)).rejects.toThrow();
+    });
+
+    it("does not delete an upload-promoted job directory while its reservation is active", async () => {
+        const {storageRoot, jobs} = await createRepository();
+        const reservedDirectory = join(storageRoot, "jobs", "reserved-internal-id");
+        await mkdir(reservedDirectory, {recursive: true});
+        await writeFile(join(reservedDirectory, "file.txt"), "upload");
+        jobs.createStorageReservationIfCapacity(
+            {
+                ownerId: "reserved-internal-id",
+                reservedBytes: 80,
+                createdAt: "2026-07-11T12:00:00.000Z",
+                expiresAt: new Date(Date.now() + 60_000).toISOString()
+            },
+            100
+        );
+
+        await runCleanup({...makeConfig(storageRoot), orphanJobDirectoryMinAgeMinutes: 0}, jobs);
+
+        await expect(access(reservedDirectory)).resolves.toBeUndefined();
     });
 });
 

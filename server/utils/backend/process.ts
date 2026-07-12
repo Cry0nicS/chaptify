@@ -10,7 +10,8 @@ export interface ProcessResult {
 export const runProcess = (
     command: string,
     args: string[],
-    timeoutMs: number
+    timeoutMs: number,
+    signal?: AbortSignal
 ): Promise<ProcessResult> =>
     new Promise((resolve, reject) => {
         const child = execFile(
@@ -19,6 +20,7 @@ export const runProcess = (
             {
                 timeout: timeoutMs,
                 maxBuffer: MAX_OUTPUT_BYTES,
+                signal,
                 windowsHide: true
             },
             (error, stdout, stderr) => {

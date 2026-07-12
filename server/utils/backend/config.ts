@@ -28,8 +28,16 @@ const runtimeConfigSchema = z.object({
     storageReservationMultiplier: numericEnvSchema(4, 1),
     storageReservationSafetyBytes: numericEnvSchema(268_435_456, 0),
     storageReservationTtlMinutes: numericEnvSchema(120, 1),
+    orphanJobDirectoryMinAgeMinutes: numericEnvSchema(30, 1),
+    cleanupIntervalSeconds: numericEnvSchema(300, 1),
+    browserDownloadGrantLifetimeSeconds: numericEnvSchema(60, 1),
     workerConcurrency: numericEnvSchema(1, 1),
     jobRetentionHours: numericEnvSchema(12, 1),
+    maxAudiobookDurationSeconds: numericEnvSchema(86_400, 1),
+    maxChapters: numericEnvSchema(300, 1),
+    jobProcessingTimeoutSeconds: numericEnvSchema(14_400, 1),
+    ffprobeTimeoutSeconds: numericEnvSchema(30, 1),
+    ffmpegChapterTimeoutSeconds: numericEnvSchema(1_200, 1),
     emailRetryAttempts: numericEnvSchema(3, 0),
     downloadSigningSecret: z.string().min(32).optional().or(z.literal("")),
     emailRetryBaseDelaySeconds: numericEnvSchema(60, 1),
@@ -66,8 +74,17 @@ export const getBackendConfigFromEnv = (): BackendConfig =>
         storageReservationMultiplier: process.env.NUXT_STORAGE_RESERVATION_MULTIPLIER,
         storageReservationSafetyBytes: process.env.NUXT_STORAGE_RESERVATION_SAFETY_BYTES,
         storageReservationTtlMinutes: process.env.NUXT_STORAGE_RESERVATION_TTL_MINUTES,
+        orphanJobDirectoryMinAgeMinutes: process.env.NUXT_ORPHAN_JOB_DIRECTORY_MIN_AGE_MINUTES,
+        cleanupIntervalSeconds: process.env.NUXT_CLEANUP_INTERVAL_SECONDS,
+        browserDownloadGrantLifetimeSeconds:
+            process.env.NUXT_BROWSER_DOWNLOAD_GRANT_LIFETIME_SECONDS,
         workerConcurrency: process.env.NUXT_WORKER_CONCURRENCY,
         jobRetentionHours: process.env.NUXT_JOB_RETENTION_HOURS,
+        maxAudiobookDurationSeconds: process.env.NUXT_MAX_AUDIOBOOK_DURATION_SECONDS,
+        maxChapters: process.env.NUXT_MAX_CHAPTERS,
+        jobProcessingTimeoutSeconds: process.env.NUXT_JOB_PROCESSING_TIMEOUT_SECONDS,
+        ffprobeTimeoutSeconds: process.env.NUXT_FFPROBE_TIMEOUT_SECONDS,
+        ffmpegChapterTimeoutSeconds: process.env.NUXT_FFMPEG_CHAPTER_TIMEOUT_SECONDS,
         emailRetryAttempts: process.env.NUXT_EMAIL_RETRY_ATTEMPTS,
         downloadSigningSecret: process.env.NUXT_DOWNLOAD_SIGNING_SECRET || "",
         emailRetryBaseDelaySeconds: process.env.NUXT_EMAIL_RETRY_BASE_DELAY_SECONDS,
@@ -111,8 +128,25 @@ export const getBackendConfig = (): BackendConfig => {
             process.env.NUXT_STORAGE_RESERVATION_SAFETY_BYTES,
         storageReservationTtlMinutes:
             values.storageReservationTtlMinutes || process.env.NUXT_STORAGE_RESERVATION_TTL_MINUTES,
+        orphanJobDirectoryMinAgeMinutes:
+            values.orphanJobDirectoryMinAgeMinutes ||
+            process.env.NUXT_ORPHAN_JOB_DIRECTORY_MIN_AGE_MINUTES,
+        cleanupIntervalSeconds:
+            values.cleanupIntervalSeconds || process.env.NUXT_CLEANUP_INTERVAL_SECONDS,
+        browserDownloadGrantLifetimeSeconds:
+            values.browserDownloadGrantLifetimeSeconds ||
+            process.env.NUXT_BROWSER_DOWNLOAD_GRANT_LIFETIME_SECONDS,
         workerConcurrency: values.workerConcurrency || process.env.NUXT_WORKER_CONCURRENCY,
         jobRetentionHours: values.jobRetentionHours || process.env.NUXT_JOB_RETENTION_HOURS,
+        maxAudiobookDurationSeconds:
+            values.maxAudiobookDurationSeconds || process.env.NUXT_MAX_AUDIOBOOK_DURATION_SECONDS,
+        maxChapters: values.maxChapters || process.env.NUXT_MAX_CHAPTERS,
+        jobProcessingTimeoutSeconds:
+            values.jobProcessingTimeoutSeconds || process.env.NUXT_JOB_PROCESSING_TIMEOUT_SECONDS,
+        ffprobeTimeoutSeconds:
+            values.ffprobeTimeoutSeconds || process.env.NUXT_FFPROBE_TIMEOUT_SECONDS,
+        ffmpegChapterTimeoutSeconds:
+            values.ffmpegChapterTimeoutSeconds || process.env.NUXT_FFMPEG_CHAPTER_TIMEOUT_SECONDS,
         emailRetryAttempts: values.emailRetryAttempts || process.env.NUXT_EMAIL_RETRY_ATTEMPTS,
         downloadSigningSecret:
             values.downloadSigningSecret || process.env.NUXT_DOWNLOAD_SIGNING_SECRET || "",

@@ -40,11 +40,23 @@ run("docker", ["compose", "exec", "-T", "public-notice", "ffmpeg", "-version"]);
 run("docker", ["compose", "exec", "-T", "public-notice", "ffprobe", "-version"]);
 run("docker", ["compose", "exec", "-T", "worker", "test", "-d", "/data/chaptify"]);
 run("docker", ["compose", "exec", "-T", "public-notice", "test", "-f", "/data/chaptify/database/chaptify.sqlite"]);
-run("docker", ["compose", "run", "--rm", "cleanup"]);
+run("docker", ["compose", "exec", "-T", "cleanup", "test", "-f", "/data/chaptify/cleanup-heartbeat.json"]);
+run("docker", [
+    "compose",
+    "exec",
+    "-T",
+    "cleanup",
+    "node",
+    "-e",
+    "const fs=require('node:fs');const p='/data/chaptify/cleanup-heartbeat.json';const read=()=>JSON.parse(fs.readFileSync(p,'utf8')).lastRunAt;const first=read();setTimeout(()=>{const second=read();if(new Date(second).getTime()<=new Date(first).getTime())process.exit(1);},6500);"
+]);
 
 const ps = output("docker", ["compose", "ps", "--status", "running", "--services"]);
 if (!ps.split(/\r?\n/).includes("worker")) {
     throw new Error("Worker service is not running");
+}
+if (!ps.split(/\r?\n/).includes("cleanup")) {
+    throw new Error("Cleanup service is not running");
 }
 
 console.log("Docker smoke checks passed.");

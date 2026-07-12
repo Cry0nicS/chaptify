@@ -5,9 +5,21 @@ import {PublicJobError} from "./errors";
 import {buildChapterFilenames, ensurePathInside} from "./paths";
 import {runProcess} from "./process";
 
-const MAX_CHAPTERS = 300;
-const FFPROBE_TIMEOUT_MS = 30_000;
-const FFMPEG_TIMEOUT_MS = 20 * 60_000;
+const DEFAULT_MEDIA_LIMITS = {
+    maxAudiobookDurationSeconds: 86_400,
+    maxChapters: 300,
+    ffprobeTimeoutMs: 30_000,
+    ffmpegChapterTimeoutMs: 20 * 60_000
+};
+
+export interface MediaProcessingOptions {
+    maxAudiobookDurationSeconds?: number;
+    maxChapters?: number;
+    ffprobeTimeoutMs?: number;
+    ffmpegChapterTimeoutMs?: number;
+    deadlineMs?: number;
+    signal?: AbortSignal;
+}
 
 const ffprobeChapterSchema = z.object({
     start_time: z.coerce.number(),
@@ -47,6 +59,28 @@ export interface MediaInspection {
     outputExtension: "mp3" | "m4a";
     bookTitle: string | null;
 }
+
+const limitsWithDefaults = (options: MediaProcessingOptions = {}) => ({
+    maxAudiobookDurationSeconds:
+        options.maxAudiobookDurationSeconds ?? DEFAULT_MEDIA_LIMITS.maxAudiobookDurationSeconds,
+    maxChapters: options.maxChapters ?? DEFAULT_MEDIA_LIMITS.maxChapters,
+    ffprobeTimeoutMs: options.ffprobeTimeoutMs ?? DEFAULT_MEDIA_LIMITS.ffprobeTimeoutMs,
+    ffmpegChapterTimeoutMs:
+        options.ffmpegChapterTimeoutMs ?? DEFAULT_MEDIA_LIMITS.ffmpegChapterTimeoutMs
+});
+
+const remainingTimeoutMs = (timeoutMs: number, deadlineMs?: number): number => {
+    if (!deadlineMs) {
+        return timeoutMs;
+    }
+
+    const remaining = deadlineMs - Date.now();
+    if (remaining <= 0) {
+        throw new PublicJobError("PROCESSING_FAILED", "Processing deadline exceeded");
+    }
+
+    return Math.min(timeoutMs, remaining);
+};
 
 const chooseOutputExtension = (
     audioCodec: string,
@@ -108,9 +142,11 @@ export const validateChapters = (chapters: ChapterInfo[], duration: number): voi
  */
 export const inspectAudioFile = async (
     sourcePath: string,
-    _sourceFormat: "mp3" | "m4b"
+    _sourceFormat: "mp3" | "m4b",
+    options: MediaProcessingOptions = {}
 ): Promise<MediaInspection> => {
     let parsed: z.infer<typeof ffprobeOutputSchema>;
+    const limits = limitsWithDefaults(options);
 
     try {
         const result = await runProcess(
@@ -125,7 +161,8 @@ export const inspectAudioFile = async (
                 "json",
                 sourcePath
             ],
-            FFPROBE_TIMEOUT_MS
+            remainingTimeoutMs(limits.ffprobeTimeoutMs, options.deadlineMs),
+            options.signal
         );
         parsed = ffprobeOutputSchema.parse(JSON.parse(result.stdout));
     } catch (error) {
@@ -141,11 +178,18 @@ export const inspectAudioFile = async (
         throw new PublicJobError("INVALID_AUDIO_FILE");
     }
 
+    if (parsed.format.duration > limits.maxAudiobookDurationSeconds) {
+        throw new PublicJobError(
+            "PROCESSING_FAILED",
+            "Audiobook duration exceeds configured limit"
+        );
+    }
+
     if (parsed.chapters.length === 0) {
         throw new PublicJobError("NO_CHAPTERS_FOUND");
     }
 
-    if (parsed.chapters.length > MAX_CHAPTERS) {
+    if (parsed.chapters.length > limits.maxChapters) {
         throw new PublicJobError("INVALID_CHAPTER_METADATA", "Too many chapters");
     }
 
@@ -174,8 +218,10 @@ const verifyChapterOutput = async (
     outputPath: string,
     chapter: ChapterInfo,
     expectedTitle: string,
-    expectedTrack: string
+    expectedTrack: string,
+    options: MediaProcessingOptions
 ) => {
+    const limits = limitsWithDefaults(options);
     const result = await runProcess(
         "ffprobe",
         [
@@ -188,7 +234,8 @@ const verifyChapterOutput = async (
             "json",
             outputPath
         ],
-        FFPROBE_TIMEOUT_MS
+        remainingTimeoutMs(limits.ffprobeTimeoutMs, options.deadlineMs),
+        options.signal
     );
     const parsed = ffprobeOutputSchema.parse(JSON.parse(result.stdout));
     const audioStreams = parsed.streams.filter((stream) => stream.codec_type === "audio");
@@ -226,8 +273,10 @@ export const splitChapters = async (
     sourcePath: string,
     chaptersDirectory: string,
     inspection: MediaInspection,
-    onChapterComplete: (currentChapter: number, totalChapters: number) => void
+    onChapterComplete: (currentChapter: number, totalChapters: number) => void,
+    options: MediaProcessingOptions = {}
 ): Promise<string[]> => {
+    const limits = limitsWithDefaults(options);
     const safeChapterDirectory = ensurePathInside(storageRoot, chaptersDirectory);
     await mkdir(safeChapterDirectory, {recursive: true, mode: 0o700});
     const filenames = buildChapterFilenames(
@@ -252,6 +301,7 @@ export const splitChapters = async (
             const metadataArgs = inspection.bookTitle
                 ? ["-metadata", `album=${inspection.bookTitle}`]
                 : [];
+            remainingTimeoutMs(limits.ffmpegChapterTimeoutMs, options.deadlineMs);
             await runProcess(
                 "ffmpeg",
                 [
@@ -283,13 +333,14 @@ export const splitChapters = async (
                     ...metadataArgs,
                     outputPath
                 ],
-                FFMPEG_TIMEOUT_MS
+                remainingTimeoutMs(limits.ffmpegChapterTimeoutMs, options.deadlineMs),
+                options.signal
             );
             const outputStats = await stat(outputPath);
             if (outputStats.size === 0) {
                 throw new Error("Empty chapter output");
             }
-            await verifyChapterOutput(outputPath, chapter, chapterTitle, track);
+            await verifyChapterOutput(outputPath, chapter, chapterTitle, track, options);
 
             outputPaths.push(outputPath);
             onChapterComplete(index + 1, inspection.chapters.length);

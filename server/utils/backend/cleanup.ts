@@ -1,3 +1,4 @@
+import type {BackendConfig} from "./config";
 import type {JobRepository} from "./database";
 import {readdir, stat} from "node:fs/promises";
 import {join} from "node:path";
@@ -32,7 +33,12 @@ const cleanupAbandonedUploads = async (storageRoot: string, nowMs: number) => {
     }
 };
 
-const cleanupOrphanJobDirectories = async (storageRoot: string, jobs: JobRepository) => {
+const cleanupOrphanJobDirectories = async (
+    storageRoot: string,
+    jobs: JobRepository,
+    nowMs: number,
+    minimumAgeMs: number
+) => {
     const jobsDirectory = ensurePathInside(storageRoot, join(storageRoot, "jobs"));
     const knownIds = new Set(jobs.listKnownInternalIds());
     let entries: string[];
@@ -48,8 +54,18 @@ const cleanupOrphanJobDirectories = async (storageRoot: string, jobs: JobReposit
             continue;
         }
 
+        if (jobs.hasActiveStorageReservation(entry)) {
+            continue;
+        }
+
         try {
-            await safeRemoveInside(storageRoot, join(jobsDirectory, entry));
+            const path = ensurePathInside(storageRoot, join(jobsDirectory, entry));
+            const stats = await stat(path);
+            if (minimumAgeMs > 0 && nowMs - stats.mtimeMs < minimumAgeMs) {
+                continue;
+            }
+
+            await safeRemoveInside(storageRoot, path);
         } catch (error) {
             console.warn("Cleanup failed for an orphan job directory", {
                 error: String(error)
@@ -65,7 +81,22 @@ const cleanupOrphanJobDirectories = async (storageRoot: string, jobs: JobReposit
  * status row but lose temporary files. Each removal is best-effort so one bad directory does not
  * stop the worker from cleaning other jobs.
  */
-export const runCleanup = async (storageRoot: string, jobs: JobRepository): Promise<void> => {
+const normalizeCleanupConfig = (
+    config: BackendConfig | string
+): Pick<BackendConfig, "storageRoot" | "orphanJobDirectoryMinAgeMinutes"> =>
+    typeof config === "string"
+        ? {
+              storageRoot: config,
+              orphanJobDirectoryMinAgeMinutes: 30
+          }
+        : config;
+
+export const runCleanup = async (
+    config: BackendConfig | string,
+    jobs: JobRepository
+): Promise<void> => {
+    const cleanupConfig = normalizeCleanupConfig(config);
+    const {storageRoot} = cleanupConfig;
     const now = new Date().toISOString();
     const nowMs = Date.now();
     jobs.expirePendingEmails(now);
@@ -103,5 +134,10 @@ export const runCleanup = async (storageRoot: string, jobs: JobRepository): Prom
     }
 
     await cleanupAbandonedUploads(storageRoot, nowMs);
-    await cleanupOrphanJobDirectories(storageRoot, jobs);
+    await cleanupOrphanJobDirectories(
+        storageRoot,
+        jobs,
+        nowMs,
+        cleanupConfig.orphanJobDirectoryMinAgeMinutes * 60 * 1000
+    );
 };

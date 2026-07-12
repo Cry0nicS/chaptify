@@ -2,6 +2,7 @@
 import type {JobStatusResponse, UploadJobResponse} from "#shared/utils/types";
 import type {FrontendApiError} from "../utils/api-errors";
 import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue";
+import {browserDownloadGrantResponseSchema} from "#shared/utils/schemas";
 import {toFrontendApiError} from "../utils/api-errors";
 import {maskEmailAddress, validateEmailAddress} from "../utils/email";
 import {validateAudiobookFile} from "../utils/file-validation";
@@ -208,22 +209,23 @@ const downloadReadyJob = async () => {
     isBrowserDownloadStarting.value = true;
 
     try {
-        const form = document.createElement("form");
-        const tokenInput = document.createElement("input");
+        const response = await $fetch<unknown>(
+            `/api/jobs/${encodeURIComponent(workflow.value.job.jobId)}/download`,
+            {
+                method: "POST",
+                body: {
+                    jobAccessToken: activeJobAccessToken.value
+                }
+            }
+        );
+        const parsed = browserDownloadGrantResponseSchema.parse(response);
 
-        form.method = "POST";
-        form.action = `/api/jobs/${encodeURIComponent(workflow.value.job.jobId)}/download`;
-        form.hidden = true;
-        tokenInput.type = "hidden";
-        tokenInput.name = "jobAccessToken";
-        tokenInput.value = activeJobAccessToken.value;
-        form.append(tokenInput);
-        document.body.append(form);
-        form.submit();
-        form.remove();
-    } catch {
+        window.location.assign(parsed.downloadUrl);
+    } catch (error) {
+        const parsedError = toFrontendApiError(error, "The direct download could not be started.");
         browserDownloadError.value =
-            "The direct download could not be started. The emailed link may still work until expiration.";
+            parsedError.guidance ||
+            "The emailed link may still work until expiration if it was delivered.";
     } finally {
         isBrowserDownloadStarting.value = false;
     }

@@ -41,9 +41,10 @@ services:
               required: false
         environment:
             NUXT_STORAGE_ROOT: /data/chaptify
+            NUXT_CLEANUP_INTERVAL_SECONDS: ${NUXT_CLEANUP_INTERVAL_SECONDS:-5}
         volumes:
             - chaptify-storage:/data/chaptify
-        restart: no
+        restart: unless-stopped
         depends_on:
             - public-notice
 

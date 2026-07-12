@@ -410,12 +410,13 @@ describe("job status composable", () => {
 });
 
 describe("native browser download", () => {
-    it("does not buffer ZIP downloads through Blob or object URLs", async () => {
+    it("creates a grant before native navigation and does not use Blob buffering", async () => {
         const pageSource = await readFile(join(process.cwd(), "app", "pages", "index.vue"), "utf8");
 
         expect(pageSource).not.toContain(".blob()");
         expect(pageSource).not.toContain("createObjectURL");
-        expect(pageSource).toContain('form.method = "POST"');
-        expect(pageSource).toContain('tokenInput.name = "jobAccessToken"');
+        expect(pageSource).not.toContain('tokenInput.name = "jobAccessToken"');
+        expect(pageSource).toContain("browserDownloadGrantResponseSchema.parse");
+        expect(pageSource).toContain("window.location.assign(parsed.downloadUrl)");
     });
 });

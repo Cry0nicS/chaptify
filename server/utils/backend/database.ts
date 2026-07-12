@@ -58,6 +58,14 @@ export interface StorageReservationInput {
     expiresAt: string;
 }
 
+export interface BrowserDownloadGrantInput {
+    publicJobId: string;
+    internalId: string;
+    tokenHash: string;
+    createdAt: string;
+    expiresAt: string;
+}
+
 let sharedDatabase: Database.Database | null = null;
 
 const rowToJob = (row: Record<string, unknown>): JobRecord => ({
@@ -165,6 +173,16 @@ export const openDatabase = (storageRoot: string): Database.Database => {
             expires_at TEXT NOT NULL,
             released_at TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS browser_download_grants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            public_job_id TEXT NOT NULL,
+            internal_id TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at TEXT
+        );
     `);
     ensureColumn(
         database,
@@ -194,10 +212,17 @@ export const openDatabase = (storageRoot: string): Database.Database => {
             browser_job_access_token_hash
         );
         CREATE INDEX IF NOT EXISTS idx_jobs_expires_at ON jobs(expires_at);
+        CREATE INDEX IF NOT EXISTS idx_jobs_internal_status ON jobs(internal_id, status);
         CREATE INDEX IF NOT EXISTS idx_storage_reservations_active ON storage_reservations(
             released_at,
             expires_at
         );
+        CREATE INDEX IF NOT EXISTS idx_storage_reservations_owner_active
+            ON storage_reservations(owner_id, released_at);
+        CREATE INDEX IF NOT EXISTS idx_browser_download_grants_token
+            ON browser_download_grants(token_hash, expires_at, used_at);
+        CREATE INDEX IF NOT EXISTS idx_browser_download_grants_job
+            ON browser_download_grants(public_job_id, internal_id);
     `);
     sharedDatabase = database;
 
@@ -258,10 +283,9 @@ export const createJobRepository = (database: Database.Database) => {
                         SELECT COALESCE(SUM(reserved_bytes), 0) AS reserved
                         FROM storage_reservations
                         WHERE released_at IS NULL
-                            AND expires_at > ?
                     `
                     )
-                    .get(input.createdAt) as {reserved: number};
+                    .get() as {reserved: number};
                 const reservedBytes = Number(row.reserved);
 
                 if (availableBytes - reservedBytes < input.reservedBytes) {
@@ -318,10 +342,54 @@ export const createJobRepository = (database: Database.Database) => {
                     `
                     UPDATE storage_reservations
                     SET released_at = ?
-                    WHERE released_at IS NULL AND expires_at <= ?
+                    WHERE released_at IS NULL
+                        AND expires_at <= ?
+                        AND owner_id NOT IN (
+                            SELECT internal_id
+                            FROM jobs
+                            WHERE status IN ('queued', 'processing', 'ready')
+                        )
                 `
                 )
                 .run(now, now);
+        },
+
+        hasActiveStorageReservation(ownerId: string): boolean {
+            const row = database
+                .prepare(
+                    `
+                    SELECT 1
+                    FROM storage_reservations
+                    WHERE owner_id = ? AND released_at IS NULL
+                    LIMIT 1
+                `
+                )
+                .get(ownerId);
+
+            return Boolean(row);
+        },
+
+        getActiveStorageReservation(ownerId: string) {
+            return database
+                .prepare(
+                    `
+                    SELECT owner_id AS ownerId,
+                        reserved_bytes AS reservedBytes,
+                        created_at AS createdAt,
+                        expires_at AS expiresAt
+                    FROM storage_reservations
+                    WHERE owner_id = ? AND released_at IS NULL
+                    LIMIT 1
+                `
+                )
+                .get(ownerId) as
+                | {
+                      ownerId: string;
+                      reservedBytes: number;
+                      createdAt: string;
+                      expiresAt: string;
+                  }
+                | undefined;
         },
 
         createJobIfCapacity(input: CreateJobInput, maxQueuedJobs: number): boolean {
@@ -448,6 +516,79 @@ export const createJobRepository = (database: Database.Database) => {
                 )
                 .get(publicJobId, browserJobAccessTokenHash, now) as
                 Record<string, unknown> | undefined;
+
+            return row ? rowToJob(row) : null;
+        },
+
+        createBrowserDownloadGrant(input: BrowserDownloadGrantInput) {
+            database
+                .prepare(
+                    `
+                    INSERT INTO browser_download_grants (
+                        public_job_id,
+                        internal_id,
+                        token_hash,
+                        created_at,
+                        expires_at
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                `
+                )
+                .run(
+                    input.publicJobId,
+                    input.internalId,
+                    input.tokenHash,
+                    input.createdAt,
+                    input.expiresAt
+                );
+        },
+
+        consumeBrowserDownloadGrant(tokenHash: string, now: string): JobRecord | null {
+            const transaction = database.transaction(() => {
+                const row = database
+                    .prepare(
+                        `
+                        SELECT id, public_job_id, internal_id
+                        FROM browser_download_grants
+                        WHERE token_hash = ?
+                            AND used_at IS NULL
+                            AND expires_at > ?
+                        LIMIT 1
+                    `
+                    )
+                    .get(tokenHash, now) as
+                    {id: number; public_job_id: string; internal_id: string} | undefined;
+
+                if (!row) {
+                    return null;
+                }
+
+                const job = database
+                    .prepare(
+                        `
+                        SELECT *
+                        FROM jobs
+                        WHERE public_job_id = ?
+                            AND internal_id = ?
+                            AND status = 'ready'
+                            AND expires_at IS NOT NULL
+                            AND expires_at > ?
+                    `
+                    )
+                    .get(row.public_job_id, row.internal_id, now) as
+                    Record<string, unknown> | undefined;
+
+                if (!job) {
+                    return null;
+                }
+
+                database
+                    .prepare("UPDATE browser_download_grants SET used_at = ? WHERE id = ?")
+                    .run(now, row.id);
+
+                return job;
+            });
+            const row = transaction();
 
             return row ? rowToJob(row) : null;
         },
@@ -744,6 +885,15 @@ export const createJobRepository = (database: Database.Database) => {
                         zip_path = NULL,
                         completed_at = COALESCE(completed_at, ?)
                     WHERE internal_id = ?
+                `
+                )
+                .run(now, internalId);
+            database
+                .prepare(
+                    `
+                    UPDATE browser_download_grants
+                    SET used_at = COALESCE(used_at, ?)
+                    WHERE internal_id = ? AND used_at IS NULL
                 `
                 )
                 .run(now, internalId);
