@@ -16,10 +16,20 @@ export const publicProcessingErrorSchema = z.object({
     message: z.string().min(1)
 });
 
+const browserJobAccessTokenSchema = z
+    .string()
+    .min(32)
+    .regex(/^[\w-]+$/);
+
 export const uploadJobResponseSchema = z.object({
     jobId: z.string().min(16),
     status: z.literal("queued"),
-    createdAt: z.string().datetime()
+    createdAt: z.string().datetime(),
+    jobAccessToken: browserJobAccessTokenSchema
+});
+
+export const browserDownloadRequestSchema = z.object({
+    jobAccessToken: browserJobAccessTokenSchema
 });
 
 export const jobStatusResponseSchema = z.object({

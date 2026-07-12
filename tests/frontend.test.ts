@@ -122,6 +122,12 @@ const makeJob = (overrides: Partial<JobStatusResponse> = {}): JobStatusResponse 
     ...overrides
 });
 
+const makeStoredJob = (jobId = "public-job-id-123456") =>
+    JSON.stringify({
+        jobId,
+        jobAccessToken: "browser-access-token-12345678901234567890"
+    });
+
 afterEach(() => {
     vi.useRealTimers();
 });
@@ -185,7 +191,8 @@ describe("upload composable", () => {
         xhr.responseText = JSON.stringify({
             jobId: "public-job-id-123456",
             status: "queued",
-            createdAt: "2026-07-11T12:00:00.000Z"
+            createdAt: "2026-07-11T12:00:00.000Z",
+            jobAccessToken: "browser-access-token-12345678901234567890"
         });
         xhr.emit("load");
 
@@ -253,7 +260,7 @@ describe("job status composable", () => {
             throw new Error("Expected composable result");
         }
 
-        status.startPolling("public-job-id-123456");
+        status.startPolling("public-job-id-123456", "browser-access-token-12345678901234567890");
         await nextTick();
         await vi.advanceTimersByTimeAsync(10);
         await vi.advanceTimersByTimeAsync(10);
@@ -261,7 +268,7 @@ describe("job status composable", () => {
         expect(fetchJobStatus).toHaveBeenCalledTimes(3);
         expect(status.job.value?.status).toBe("ready");
         expect(status.isPolling.value).toBe(false);
-        expect(storage.getItem(ACTIVE_JOB_STORAGE_KEY)).toBe("public-job-id-123456");
+        expect(storage.getItem(ACTIVE_JOB_STORAGE_KEY)).toBe(makeStoredJob("public-job-id-123456"));
         scope.stop();
     });
 
@@ -297,7 +304,7 @@ describe("job status composable", () => {
             throw new Error("Expected composable result");
         }
 
-        status.startPolling("public-job-id-123456");
+        status.startPolling("public-job-id-123456", "browser-access-token-12345678901234567890");
         await nextTick();
         expect(status.isPolling.value).toBe(true);
         await vi.advanceTimersByTimeAsync(10);
@@ -327,7 +334,7 @@ describe("job status composable", () => {
             throw new Error("Expected composable result");
         }
 
-        status.startPolling("public-job-id-123456");
+        status.startPolling("public-job-id-123456", "browser-access-token-12345678901234567890");
         await nextTick();
         expect(status.transientError.value).toContain("Retrying");
         await vi.advanceTimersByTimeAsync(10);
@@ -338,7 +345,7 @@ describe("job status composable", () => {
 
     it("recovers an active job from session storage and clears invalid jobs", async () => {
         const storage = new MemoryStorage();
-        storage.setItem(ACTIVE_JOB_STORAGE_KEY, "public-job-id-123456");
+        storage.setItem(ACTIVE_JOB_STORAGE_KEY, makeStoredJob("public-job-id-123456"));
         const fetchJobStatus = vi.fn(async () => makeJob({status: "expired"}));
         const scope = effectScope();
         const status = scope.run(() => useJobStatus({fetchJobStatus, storage}));
@@ -353,7 +360,7 @@ describe("job status composable", () => {
         expect(storage.getItem(ACTIVE_JOB_STORAGE_KEY)).toBeNull();
         scope.stop();
 
-        storage.setItem(ACTIVE_JOB_STORAGE_KEY, "missing-job-id-123456");
+        storage.setItem(ACTIVE_JOB_STORAGE_KEY, makeStoredJob("missing-job-id-123456"));
         const notFound = Object.assign(new Error("not found"), {statusCode: 404});
         const secondScope = effectScope();
         const missingStatus = secondScope.run(() =>
@@ -390,7 +397,7 @@ describe("job status composable", () => {
             throw new Error("Expected composable result");
         }
 
-        status.startPolling("public-job-id-123456");
+        status.startPolling("public-job-id-123456", "browser-access-token-12345678901234567890");
         await nextTick();
         scope.stop();
         await vi.advanceTimersByTimeAsync(50);

@@ -12,7 +12,12 @@ import {
 } from "../server/utils/backend/database";
 import {loadDotenv, parseDotenv} from "../server/utils/backend/env";
 import {PublicJobError, serializePublicError} from "../server/utils/backend/errors";
-import {createDownloadToken, hashDownloadToken} from "../server/utils/backend/ids";
+import {
+    createBrowserJobAccessToken,
+    createDownloadToken,
+    hashBrowserJobAccessToken,
+    hashDownloadToken
+} from "../server/utils/backend/ids";
 import {validateChapters} from "../server/utils/backend/media";
 import {
     buildChapterFilenames,
@@ -83,7 +88,8 @@ const createQueuedJob = (jobs: ReturnType<typeof createJobRepository>, storageRo
         fileSize: 100,
         email: "reader@example.test",
         sourcePath: join(storageRoot, "jobs", "internal-job-id", "source", "source.m4b"),
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        browserJobAccessTokenHash: hashBrowserJobAccessToken("browser-token")
     });
 };
 
@@ -254,6 +260,15 @@ describe("tokens and persistence", () => {
         expect(hash).toMatch(/^[a-f0-9]{64}$/);
     });
 
+    it("generates hash-only browser job access token values", () => {
+        const token = createBrowserJobAccessToken();
+        const hash = hashBrowserJobAccessToken(token);
+
+        expect(token).not.toBe(hash);
+        expect(token.length).toBeGreaterThanOrEqual(40);
+        expect(hash).toMatch(/^[a-f0-9]{64}$/);
+    });
+
     it("claims queued jobs atomically and updates state transitions", async () => {
         const {storageRoot, jobs} = await createRepository();
         createQueuedJob(jobs, storageRoot);
@@ -316,6 +331,37 @@ describe("tokens and persistence", () => {
         expect(
             jobs.findReadyByTokenHash(hashDownloadToken("token"), "2026-07-11T13:00:00.000Z")
         ).toBeNull();
+    });
+
+    it("finds ready jobs by browser access token without using the download token", async () => {
+        const {storageRoot, jobs} = await createRepository();
+        createQueuedJob(jobs, storageRoot);
+        jobs.claimQueuedJob(new Date().toISOString());
+        jobs.markReady(
+            "internal-job-id",
+            join(storageRoot, "jobs", "internal-job-id", "output", "book.zip"),
+            hashDownloadToken("download-token"),
+            "2026-07-11T12:00:00.000Z",
+            "2026-07-11T13:00:00.000Z"
+        );
+
+        expect(
+            jobs.findReadyByBrowserAccess(
+                "public-job-id",
+                hashBrowserJobAccessToken("browser-token"),
+                "2026-07-11T12:30:00.000Z"
+            )?.publicJobId
+        ).toBe("public-job-id");
+        expect(
+            jobs.findReadyByBrowserAccess(
+                "public-job-id",
+                hashBrowserJobAccessToken("download-token"),
+                "2026-07-11T12:30:00.000Z"
+            )
+        ).toBeNull();
+
+        jobs.markExpired("internal-job-id", "2026-07-11T13:00:00.000Z");
+        expect(jobs.findByPublicId("public-job-id")?.browserJobAccessTokenHash).toBeNull();
     });
 });
 

@@ -9,7 +9,12 @@ interface UseJobStatusOptions {
     storage?: Storage;
 }
 
-const ACTIVE_JOB_STORAGE_KEY = "chaptify.activeJobId";
+interface ActiveJobCredentials {
+    jobId: string;
+    jobAccessToken: string;
+}
+
+const ACTIVE_JOB_STORAGE_KEY = "chaptify.activeJob";
 
 const isPollingComplete = (job: JobStatusResponse): boolean =>
     job.status === "failed" ||
@@ -23,6 +28,7 @@ export const useJobStatus = (options: UseJobStatusOptions = {}) => {
     const isRecovering = ref(false);
     const failures = ref(0);
     const activeJobId = ref<string | null>(null);
+    const activeJobAccessToken = ref<string | null>(null);
 
     const intervalMs = options.intervalMs ?? 2000;
     const maxTransientFailures = options.maxTransientFailures ?? 5;
@@ -42,13 +48,39 @@ export const useJobStatus = (options: UseJobStatusOptions = {}) => {
         }
     };
 
-    const persistActiveJob = (jobId: string) => {
+    const readActiveJob = (): ActiveJobCredentials | null => {
+        const stored = storage?.getItem(ACTIVE_JOB_STORAGE_KEY);
+
+        if (!stored) {
+            return null;
+        }
+
+        try {
+            const parsed = JSON.parse(stored) as Partial<ActiveJobCredentials>;
+
+            if (typeof parsed.jobId === "string" && typeof parsed.jobAccessToken === "string") {
+                return {
+                    jobId: parsed.jobId,
+                    jobAccessToken: parsed.jobAccessToken
+                };
+            }
+        } catch {
+            return null;
+        }
+
+        return null;
+    };
+
+    const persistActiveJob = (credentials: ActiveJobCredentials) => {
+        const {jobId, jobAccessToken} = credentials;
         activeJobId.value = jobId;
-        storage?.setItem(ACTIVE_JOB_STORAGE_KEY, jobId);
+        activeJobAccessToken.value = jobAccessToken;
+        storage?.setItem(ACTIVE_JOB_STORAGE_KEY, JSON.stringify(credentials));
     };
 
     const clearActiveJob = () => {
         activeJobId.value = null;
+        activeJobAccessToken.value = null;
         storage?.removeItem(ACTIVE_JOB_STORAGE_KEY);
     };
 
@@ -116,27 +148,35 @@ export const useJobStatus = (options: UseJobStatusOptions = {}) => {
         }
     };
 
-    const startPolling = (jobId: string) => {
+    const startPolling = (jobId: string, jobAccessToken?: string) => {
         stopPolling();
-        persistActiveJob(jobId);
+        const token = jobAccessToken ?? activeJobAccessToken.value;
+
+        if (token) {
+            persistActiveJob({jobId, jobAccessToken: token});
+        } else {
+            activeJobId.value = jobId;
+        }
+
         isPolling.value = true;
         void poll(jobId);
     };
 
     const recoverActiveJob = async () => {
-        const storedJobId = storage?.getItem(ACTIVE_JOB_STORAGE_KEY);
+        const storedJob = readActiveJob();
 
-        if (!storedJobId) {
+        if (!storedJob) {
+            clearActiveJob();
             return null;
         }
 
         isRecovering.value = true;
-        persistActiveJob(storedJobId);
-        const recovered = await fetchOnce(storedJobId);
+        persistActiveJob(storedJob);
+        const recovered = await fetchOnce(storedJob.jobId);
         isRecovering.value = false;
 
         if (recovered && !isPollingComplete(recovered)) {
-            startPolling(storedJobId);
+            startPolling(storedJob.jobId, storedJob.jobAccessToken);
         }
 
         return recovered;
@@ -145,6 +185,7 @@ export const useJobStatus = (options: UseJobStatusOptions = {}) => {
     onScopeDispose(stopPolling);
 
     return {
+        activeJobAccessToken,
         activeJobId,
         clearActiveJob,
         isPolling,

@@ -6,9 +6,13 @@ import {formatExpiration} from "../utils/date-format";
 
 const props = defineProps<{
     job: JobStatusResponse;
+    canBrowserDownload?: boolean;
+    browserDownloadError?: string | null;
+    isBrowserDownloadStarting?: boolean;
 }>();
 
 const emit = defineEmits<{
+    download: [];
     startOver: [];
 }>();
 
@@ -50,7 +54,28 @@ const emailMessage = computed(() => {
                 variant="soft"
                 icon="i-lucide-circle-check"
                 title="Audiobook processed"
-                description="Your chapter ZIP is ready. The secure download link is sent by email and is not shown on this page." />
+                description="Your chapter ZIP is ready. You can download it here in this tab, and the emailed temporary link will continue to work." />
+
+            <div
+                v-if="canBrowserDownload"
+                class="flex flex-col gap-3 sm:flex-row">
+                <UButton
+                    type="button"
+                    size="lg"
+                    icon="i-lucide-download"
+                    :loading="isBrowserDownloadStarting"
+                    @click="emit('download')">
+                    Download ZIP
+                </UButton>
+            </div>
+
+            <UAlert
+                v-if="browserDownloadError"
+                color="warning"
+                variant="soft"
+                icon="i-lucide-circle-alert"
+                title="Direct download unavailable"
+                :description="browserDownloadError" />
 
             <UAlert
                 :color="job.emailStatus === 'failed' ? 'warning' : 'primary'"

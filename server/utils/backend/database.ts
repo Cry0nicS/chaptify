@@ -33,6 +33,7 @@ export interface JobRecord {
     zipPath: string | null;
     sourcePath: string;
     downloadTokenHash: string | null;
+    browserJobAccessTokenHash: string | null;
 }
 
 export interface CreateJobInput {
@@ -44,6 +45,7 @@ export interface CreateJobInput {
     email: string;
     sourcePath: string;
     createdAt: string;
+    browserJobAccessTokenHash: string;
 }
 
 let sharedDatabase: Database.Database | null = null;
@@ -76,8 +78,22 @@ const rowToJob = (row: Record<string, unknown>): JobRecord => ({
     emailSentAt: row.email_sent_at === null ? null : String(row.email_sent_at),
     zipPath: row.zip_path === null ? null : String(row.zip_path),
     sourcePath: String(row.source_path),
-    downloadTokenHash: row.download_token_hash === null ? null : String(row.download_token_hash)
+    downloadTokenHash: row.download_token_hash === null ? null : String(row.download_token_hash),
+    browserJobAccessTokenHash:
+        row.browser_job_access_token_hash === null
+            ? null
+            : String(row.browser_job_access_token_hash)
 });
+
+const ensureColumn = (database: Database.Database, table: string, column: string, ddl: string) => {
+    const columns = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+        name: string;
+    }>;
+
+    if (!columns.some((entry) => entry.name === column)) {
+        database.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    }
+};
 
 export const openDatabase = (storageRoot: string): Database.Database => {
     if (sharedDatabase) {
@@ -115,12 +131,25 @@ export const openDatabase = (storageRoot: string): Database.Database => {
             email_sent_at TEXT,
             zip_path TEXT,
             source_path TEXT NOT NULL,
-            download_token_hash TEXT
+            download_token_hash TEXT,
+            browser_job_access_token_hash TEXT
         );
+    `);
+    ensureColumn(
+        database,
+        "jobs",
+        "browser_job_access_token_hash",
+        "browser_job_access_token_hash TEXT"
+    );
+    database.exec(`
 
         CREATE INDEX IF NOT EXISTS idx_jobs_public_job_id ON jobs(public_job_id);
         CREATE INDEX IF NOT EXISTS idx_jobs_queued ON jobs(status, created_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_token_hash ON jobs(download_token_hash);
+        CREATE INDEX IF NOT EXISTS idx_jobs_browser_access_hash ON jobs(
+            public_job_id,
+            browser_job_access_token_hash
+        );
         CREATE INDEX IF NOT EXISTS idx_jobs_expires_at ON jobs(expires_at);
     `);
     sharedDatabase = database;
@@ -152,9 +181,10 @@ export const createJobRepository = (database: Database.Database) => {
                         progress,
                         created_at,
                         email_status,
-                        source_path
+                        source_path,
+                        browser_job_access_token_hash
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?)
+                    VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?)
                 `
                 )
                 .run(
@@ -165,7 +195,8 @@ export const createJobRepository = (database: Database.Database) => {
                     input.fileSize,
                     input.email,
                     input.createdAt,
-                    input.sourcePath
+                    input.sourcePath,
+                    input.browserJobAccessTokenHash
                 );
         },
 
@@ -205,6 +236,28 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .get(tokenHash, now) as Record<string, unknown> | undefined;
+
+            return row ? rowToJob(row) : null;
+        },
+
+        findReadyByBrowserAccess(
+            publicJobId: string,
+            browserJobAccessTokenHash: string,
+            now: string
+        ): JobRecord | null {
+            const row = database
+                .prepare(
+                    `
+                    SELECT * FROM jobs
+                    WHERE public_job_id = ?
+                        AND browser_job_access_token_hash = ?
+                        AND status = 'ready'
+                        AND expires_at IS NOT NULL
+                        AND expires_at > ?
+                `
+                )
+                .get(publicJobId, browserJobAccessTokenHash, now) as
+                Record<string, unknown> | undefined;
 
             return row ? rowToJob(row) : null;
         },
@@ -401,6 +454,7 @@ export const createJobRepository = (database: Database.Database) => {
                     UPDATE jobs
                     SET status = 'expired',
                         download_token_hash = NULL,
+                        browser_job_access_token_hash = NULL,
                         email = NULL,
                         zip_path = NULL,
                         completed_at = COALESCE(completed_at, ?)

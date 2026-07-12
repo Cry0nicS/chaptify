@@ -6,7 +6,11 @@ import {z} from "zod";
 import {uploadMetadataSchema} from "../../../shared/utils/schemas";
 import {createBackendContext} from "../../utils/backend/context";
 import {PublicJobError} from "../../utils/backend/errors";
-import {createPublicId} from "../../utils/backend/ids";
+import {
+    createBrowserJobAccessToken,
+    createPublicId,
+    hashBrowserJobAccessToken
+} from "../../utils/backend/ids";
 import {ensurePathInside} from "../../utils/backend/paths";
 import {
     createJobStorage,
@@ -145,6 +149,7 @@ export default defineEventHandler(async (event) => {
         tempPath = null;
         tempPaths = [];
         const publicJobId = createPublicId();
+        const jobAccessToken = createBrowserJobAccessToken();
         const createdAt = new Date().toISOString();
         jobs.createJob({
             publicJobId,
@@ -154,14 +159,16 @@ export default defineEventHandler(async (event) => {
             fileSize: storedUpload.fileSize,
             email,
             sourcePath: storedUpload.sourcePath,
-            createdAt
+            createdAt,
+            browserJobAccessTokenHash: hashBrowserJobAccessToken(jobAccessToken)
         });
         setResponseStatus(event, 202);
 
         return {
             jobId: publicJobId,
             status: "queued",
-            createdAt
+            createdAt,
+            jobAccessToken
         };
     } catch (error) {
         for (const path of tempPath ? [...tempPaths, tempPath] : tempPaths) {
