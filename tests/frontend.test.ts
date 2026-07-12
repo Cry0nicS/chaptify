@@ -265,6 +265,49 @@ describe("job status composable", () => {
         scope.stop();
     });
 
+    it("keeps polling when the ZIP is ready but email delivery is pending", async () => {
+        vi.useFakeTimers();
+        const responses = [
+            makeJob({
+                status: "ready",
+                progress: 100,
+                completedAt: "2026-07-11T12:30:00.000Z",
+                expiresAt: "2026-07-12T00:30:00.000Z",
+                emailStatus: "pending"
+            }),
+            makeJob({
+                status: "ready",
+                progress: 100,
+                completedAt: "2026-07-11T12:30:00.000Z",
+                expiresAt: "2026-07-12T00:30:00.000Z",
+                emailStatus: "sent"
+            })
+        ];
+        const fetchJobStatus = vi.fn(async () => responses.shift());
+        const scope = effectScope();
+        const status = scope.run(() =>
+            useJobStatus({
+                fetchJobStatus,
+                intervalMs: 10,
+                storage: new MemoryStorage()
+            })
+        );
+
+        if (!status) {
+            throw new Error("Expected composable result");
+        }
+
+        status.startPolling("public-job-id-123456");
+        await nextTick();
+        expect(status.isPolling.value).toBe(true);
+        await vi.advanceTimersByTimeAsync(10);
+
+        expect(fetchJobStatus).toHaveBeenCalledTimes(2);
+        expect(status.job.value?.emailStatus).toBe("sent");
+        expect(status.isPolling.value).toBe(false);
+        scope.stop();
+    });
+
     it("keeps temporary polling failures recoverable", async () => {
         vi.useFakeTimers();
         const fetchJobStatus = vi

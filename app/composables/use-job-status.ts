@@ -11,8 +11,10 @@ interface UseJobStatusOptions {
 
 const ACTIVE_JOB_STORAGE_KEY = "chaptify.activeJobId";
 
-const isTerminalStatus = (status: JobStatusResponse["status"]): boolean =>
-    status === "ready" || status === "failed" || status === "expired";
+const isPollingComplete = (job: JobStatusResponse): boolean =>
+    job.status === "failed" ||
+    job.status === "expired" ||
+    (job.status === "ready" && job.emailStatus !== "pending");
 
 export const useJobStatus = (options: UseJobStatusOptions = {}) => {
     const job = ref<JobStatusResponse | null>(null);
@@ -101,7 +103,7 @@ export const useJobStatus = (options: UseJobStatusOptions = {}) => {
 
         const nextJob = await fetchOnce(jobId);
 
-        if (nextJob && isTerminalStatus(nextJob.status)) {
+        if (nextJob && isPollingComplete(nextJob)) {
             stopPolling();
             return;
         }
@@ -133,7 +135,7 @@ export const useJobStatus = (options: UseJobStatusOptions = {}) => {
         const recovered = await fetchOnce(storedJobId);
         isRecovering.value = false;
 
-        if (recovered && !isTerminalStatus(recovered.status)) {
+        if (recovered && !isPollingComplete(recovered)) {
             startPolling(storedJobId);
         }
 

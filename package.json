@@ -14,7 +14,7 @@
         "preview": "node .output/start.mjs",
         "postinstall": "nuxt prepare",
         "test": "vitest run",
-        "start:build": "esbuild server/start.ts --platform=node --format=esm --target=node22 --outfile=.output/start.mjs",
+        "start:build": "esbuild server/start.ts --bundle --platform=node --format=esm --target=node22 --outfile=.output/start.mjs",
         "worker:build": "esbuild server/worker.ts --bundle --platform=node --format=esm --target=node22 --outfile=.output/worker.mjs --external:better-sqlite3 --external:mailgun.js --external:formidable --external:archiver",
         "worker:dev": "tsx server/worker.ts",
         "worker:start": "node .output/worker.mjs",

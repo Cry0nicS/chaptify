@@ -1,7 +1,6 @@
-if (process.env.NUXT_APP_BASE_URL) {
-    process.env.CHAPTIFY_APP_BASE_URL = process.env.NUXT_APP_BASE_URL;
-    delete process.env.NUXT_APP_BASE_URL;
-}
+import {loadDotenv} from "./utils/backend/env";
+
+loadDotenv();
 
 const main = async () => {
     await import(new URL("./server/index.mjs", import.meta.url).href);
