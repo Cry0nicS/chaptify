@@ -30,6 +30,9 @@ export interface JobRecord {
     emailStatus: PublicEmailStatus;
     emailAttempts: number;
     emailSentAt: string | null;
+    emailNextAttemptAt: string | null;
+    emailLastError: string | null;
+    emailMessageId: string | null;
     zipPath: string | null;
     sourcePath: string;
     downloadTokenHash: string | null;
@@ -46,6 +49,21 @@ export interface CreateJobInput {
     sourcePath: string;
     createdAt: string;
     browserJobAccessTokenHash: string;
+}
+
+export interface StorageReservationInput {
+    ownerId: string;
+    reservedBytes: number;
+    createdAt: string;
+    expiresAt: string;
+}
+
+export interface BrowserDownloadGrantInput {
+    publicJobId: string;
+    internalId: string;
+    tokenHash: string;
+    createdAt: string;
+    expiresAt: string;
 }
 
 let sharedDatabase: Database.Database | null = null;
@@ -76,6 +94,10 @@ const rowToJob = (row: Record<string, unknown>): JobRecord => ({
     emailStatus: row.email_status as PublicEmailStatus,
     emailAttempts: Number(row.email_attempts),
     emailSentAt: row.email_sent_at === null ? null : String(row.email_sent_at),
+    emailNextAttemptAt:
+        row.email_next_attempt_at === null ? null : String(row.email_next_attempt_at),
+    emailLastError: row.email_last_error === null ? null : String(row.email_last_error),
+    emailMessageId: row.email_message_id === null ? null : String(row.email_message_id),
     zipPath: row.zip_path === null ? null : String(row.zip_path),
     sourcePath: String(row.source_path),
     downloadTokenHash: row.download_token_hash === null ? null : String(row.download_token_hash),
@@ -107,6 +129,11 @@ export const openDatabase = (storageRoot: string): Database.Database => {
     database.pragma("busy_timeout = 5000");
     database.pragma("foreign_keys = ON");
     database.exec(`
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             public_job_id TEXT NOT NULL UNIQUE,
@@ -129,10 +156,32 @@ export const openDatabase = (storageRoot: string): Database.Database => {
             email_status TEXT NOT NULL DEFAULT 'pending',
             email_attempts INTEGER NOT NULL DEFAULT 0,
             email_sent_at TEXT,
+            email_next_attempt_at TEXT,
+            email_last_error TEXT,
+            email_message_id TEXT,
             zip_path TEXT,
             source_path TEXT NOT NULL,
             download_token_hash TEXT,
             browser_job_access_token_hash TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS storage_reservations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id TEXT NOT NULL UNIQUE,
+            reserved_bytes INTEGER NOT NULL CHECK (reserved_bytes > 0),
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            released_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS browser_download_grants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            public_job_id TEXT NOT NULL,
+            internal_id TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at TEXT
         );
     `);
     ensureColumn(
@@ -141,16 +190,41 @@ export const openDatabase = (storageRoot: string): Database.Database => {
         "browser_job_access_token_hash",
         "browser_job_access_token_hash TEXT"
     );
+    ensureColumn(database, "jobs", "email_next_attempt_at", "email_next_attempt_at TEXT");
+    ensureColumn(database, "jobs", "email_last_error", "email_last_error TEXT");
+    ensureColumn(database, "jobs", "email_message_id", "email_message_id TEXT");
+    database
+        .prepare("INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)")
+        .run(1, new Date().toISOString());
     database.exec(`
 
         CREATE INDEX IF NOT EXISTS idx_jobs_public_job_id ON jobs(public_job_id);
         CREATE INDEX IF NOT EXISTS idx_jobs_queued ON jobs(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_jobs_email_retry ON jobs(
+            status,
+            email_status,
+            email_next_attempt_at,
+            expires_at
+        );
         CREATE INDEX IF NOT EXISTS idx_jobs_token_hash ON jobs(download_token_hash);
         CREATE INDEX IF NOT EXISTS idx_jobs_browser_access_hash ON jobs(
             public_job_id,
             browser_job_access_token_hash
         );
         CREATE INDEX IF NOT EXISTS idx_jobs_expires_at ON jobs(expires_at);
+        CREATE INDEX IF NOT EXISTS idx_jobs_internal_status ON jobs(internal_id, status);
+        CREATE INDEX IF NOT EXISTS idx_storage_reservations_active ON storage_reservations(
+            released_at,
+            expires_at
+        );
+        CREATE INDEX IF NOT EXISTS idx_storage_reservations_owner_active
+            ON storage_reservations(owner_id, released_at);
+        CREATE INDEX IF NOT EXISTS idx_browser_download_grants_token
+            ON browser_download_grants(token_hash, expires_at, used_at);
+        CREATE INDEX IF NOT EXISTS idx_browser_download_grants_job
+            ON browser_download_grants(public_job_id, internal_id);
+        CREATE INDEX IF NOT EXISTS idx_browser_download_grants_retention
+            ON browser_download_grants(expires_at, used_at, internal_id);
     `);
     sharedDatabase = database;
 
@@ -200,6 +274,178 @@ export const createJobRepository = (database: Database.Database) => {
                 );
         },
 
+        createStorageReservationIfCapacity(
+            input: StorageReservationInput,
+            availableBytes: number
+        ): boolean {
+            const transaction = database.transaction(() => {
+                const row = database
+                    .prepare(
+                        `
+                        SELECT COALESCE(SUM(reserved_bytes), 0) AS reserved
+                        FROM storage_reservations
+                        WHERE released_at IS NULL
+                    `
+                    )
+                    .get() as {reserved: number};
+                const reservedBytes = Number(row.reserved);
+
+                if (availableBytes - reservedBytes < input.reservedBytes) {
+                    return false;
+                }
+
+                database
+                    .prepare(
+                        `
+                        INSERT INTO storage_reservations (
+                            owner_id,
+                            reserved_bytes,
+                            created_at,
+                            expires_at
+                        )
+                        VALUES (?, ?, ?, ?)
+                    `
+                    )
+                    .run(input.ownerId, input.reservedBytes, input.createdAt, input.expiresAt);
+
+                return true;
+            });
+
+            return transaction();
+        },
+
+        transferStorageReservation(previousOwnerId: string, nextOwnerId: string) {
+            database
+                .prepare(
+                    `
+                    UPDATE storage_reservations
+                    SET owner_id = ?
+                    WHERE owner_id = ? AND released_at IS NULL
+                `
+                )
+                .run(nextOwnerId, previousOwnerId);
+        },
+
+        releaseStorageReservation(ownerId: string, now: string): boolean {
+            const result = database
+                .prepare(
+                    `
+                    UPDATE storage_reservations
+                    SET released_at = ?
+                    WHERE owner_id = ? AND released_at IS NULL
+                `
+                )
+                .run(now, ownerId);
+
+            return result.changes === 1;
+        },
+
+        releaseExpiredStorageReservations(now: string) {
+            database
+                .prepare(
+                    `
+                    UPDATE storage_reservations
+                    SET released_at = ?
+                    WHERE released_at IS NULL
+                        AND expires_at <= ?
+                        AND owner_id NOT IN (
+                            SELECT internal_id
+                            FROM jobs
+                            WHERE status IN ('queued', 'processing', 'ready')
+                        )
+                `
+                )
+                .run(now, now);
+        },
+
+        hasActiveStorageReservation(ownerId: string): boolean {
+            const row = database
+                .prepare(
+                    `
+                    SELECT 1
+                    FROM storage_reservations
+                    WHERE owner_id = ? AND released_at IS NULL
+                    LIMIT 1
+                `
+                )
+                .get(ownerId);
+
+            return Boolean(row);
+        },
+
+        getActiveStorageReservation(ownerId: string) {
+            return database
+                .prepare(
+                    `
+                    SELECT owner_id AS ownerId,
+                        reserved_bytes AS reservedBytes,
+                        created_at AS createdAt,
+                        expires_at AS expiresAt
+                    FROM storage_reservations
+                    WHERE owner_id = ? AND released_at IS NULL
+                    LIMIT 1
+                `
+                )
+                .get(ownerId) as
+                | {
+                      ownerId: string;
+                      reservedBytes: number;
+                      createdAt: string;
+                      expiresAt: string;
+                  }
+                | undefined;
+        },
+
+        createJobIfCapacity(input: CreateJobInput, maxQueuedJobs: number): boolean {
+            const transaction = database.transaction(() => {
+                const row = database
+                    .prepare(
+                        "SELECT COUNT(*) AS count FROM jobs WHERE status IN ('queued', 'processing')"
+                    )
+                    .get() as {count: number};
+
+                if (row.count >= maxQueuedJobs) {
+                    return false;
+                }
+
+                database
+                    .prepare(
+                        `
+                        INSERT INTO jobs (
+                            public_job_id,
+                            internal_id,
+                            display_filename,
+                            source_format,
+                            file_size,
+                            email,
+                            status,
+                            progress,
+                            created_at,
+                            email_status,
+                            source_path,
+                            browser_job_access_token_hash
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?)
+                    `
+                    )
+                    .run(
+                        input.publicJobId,
+                        input.internalId,
+                        input.displayFilename,
+                        input.sourceFormat,
+                        input.fileSize,
+                        input.email,
+                        input.createdAt,
+                        input.sourcePath,
+                        input.browserJobAccessTokenHash
+                    );
+
+                return true;
+            });
+
+            return transaction();
+        },
+
         countQueuedJobs(): number {
             const row = database
                 .prepare(
@@ -240,6 +486,22 @@ export const createJobRepository = (database: Database.Database) => {
             return row ? rowToJob(row) : null;
         },
 
+        findReadyByPublicId(publicJobId: string, now: string): JobRecord | null {
+            const row = database
+                .prepare(
+                    `
+                    SELECT * FROM jobs
+                    WHERE public_job_id = ?
+                        AND status = 'ready'
+                        AND expires_at IS NOT NULL
+                        AND expires_at > ?
+                `
+                )
+                .get(publicJobId, now) as Record<string, unknown> | undefined;
+
+            return row ? rowToJob(row) : null;
+        },
+
         findReadyByBrowserAccess(
             publicJobId: string,
             browserJobAccessTokenHash: string,
@@ -258,6 +520,83 @@ export const createJobRepository = (database: Database.Database) => {
                 )
                 .get(publicJobId, browserJobAccessTokenHash, now) as
                 Record<string, unknown> | undefined;
+
+            return row ? rowToJob(row) : null;
+        },
+
+        createBrowserDownloadGrant(input: BrowserDownloadGrantInput) {
+            database
+                .prepare(
+                    `
+                    INSERT INTO browser_download_grants (
+                        public_job_id,
+                        internal_id,
+                        token_hash,
+                        created_at,
+                        expires_at
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                `
+                )
+                .run(
+                    input.publicJobId,
+                    input.internalId,
+                    input.tokenHash,
+                    input.createdAt,
+                    input.expiresAt
+                );
+        },
+
+        consumeBrowserDownloadGrant(tokenHash: string, now: string): JobRecord | null {
+            const transaction = database.transaction(() => {
+                const row = database
+                    .prepare(
+                        `
+                        SELECT id, public_job_id, internal_id
+                        FROM browser_download_grants
+                        WHERE token_hash = ?
+                            AND used_at IS NULL
+                            AND expires_at > ?
+                        LIMIT 1
+                    `
+                    )
+                    .get(tokenHash, now) as
+                    {id: number; public_job_id: string; internal_id: string} | undefined;
+
+                if (!row) {
+                    return null;
+                }
+
+                const job = database
+                    .prepare(
+                        `
+                        SELECT *
+                        FROM jobs
+                        WHERE public_job_id = ?
+                            AND internal_id = ?
+                            AND status = 'ready'
+                            AND expires_at IS NOT NULL
+                            AND expires_at > ?
+                    `
+                    )
+                    .get(row.public_job_id, row.internal_id, now) as
+                    Record<string, unknown> | undefined;
+
+                if (!job) {
+                    return null;
+                }
+
+                const result = database
+                    .prepare("UPDATE browser_download_grants SET used_at = ? WHERE id = ?")
+                    .run(now, row.id);
+
+                if (result.changes !== 1) {
+                    return null;
+                }
+
+                return job;
+            });
+            const row = transaction();
 
             return row ? rowToJob(row) : null;
         },
@@ -346,9 +685,9 @@ export const createJobRepository = (database: Database.Database) => {
             publicErrorCode: PublicProcessingErrorCode,
             internalError: string,
             now: string
-        ) {
+        ): boolean {
             const publicError = serializePublicError(publicErrorCode);
-            database
+            const result = database
                 .prepare(
                     `
                     UPDATE jobs
@@ -362,6 +701,8 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(publicErrorCode, publicError?.message || null, internalError, now, internalId);
+
+            return result.changes === 1;
         },
 
         /**
@@ -374,11 +715,11 @@ export const createJobRepository = (database: Database.Database) => {
         markReady(
             internalId: string,
             zipPath: string,
-            tokenHash: string,
+            tokenHash: string | null,
             completedAt: string,
             expiresAt: string
-        ) {
-            database
+        ): boolean {
+            const result = database
                 .prepare(
                     `
                     UPDATE jobs
@@ -388,24 +729,33 @@ export const createJobRepository = (database: Database.Database) => {
                         expires_at = ?,
                         zip_path = ?,
                         download_token_hash = ?,
+                        email_next_attempt_at = ?,
                         public_error_code = NULL,
                         public_error_message = NULL
                     WHERE internal_id = ? AND status = 'processing'
                 `
                 )
-                .run(completedAt, expiresAt, zipPath, tokenHash, internalId);
+                .run(completedAt, expiresAt, zipPath, tokenHash, completedAt, internalId);
+
+            return result.changes === 1;
         },
 
-        incrementEmailAttempt(internalId: string) {
+        recordEmailAttempt(
+            internalId: string,
+            nextAttemptAt: string | null,
+            safeFailure: string | null
+        ) {
             database
                 .prepare(
                     `
                     UPDATE jobs
-                    SET email_attempts = email_attempts + 1
+                    SET email_attempts = email_attempts + 1,
+                        email_next_attempt_at = ?,
+                        email_last_error = ?
                     WHERE internal_id = ?
                 `
                 )
-                .run(internalId);
+                .run(nextAttemptAt, safeFailure, internalId);
         },
 
         /**
@@ -421,17 +771,67 @@ export const createJobRepository = (database: Database.Database) => {
                     UPDATE jobs
                     SET email_status = 'sent',
                         email_sent_at = ?,
-                        email = NULL
+                        email = NULL,
+                        email_next_attempt_at = NULL,
+                        email_last_error = NULL,
+                        email_message_id = COALESCE(?, email_message_id)
                     WHERE internal_id = ?
                 `
                 )
-                .run(now, internalId);
+                .run(now, null, internalId);
         },
 
-        markEmailFailed(internalId: string) {
+        markEmailFailed(internalId: string, safeFailure: string | null = null) {
             database
-                .prepare("UPDATE jobs SET email_status = 'failed' WHERE internal_id = ?")
-                .run(internalId);
+                .prepare(
+                    `
+                    UPDATE jobs
+                    SET email_status = 'failed',
+                        email = NULL,
+                        email_next_attempt_at = NULL,
+                        email_last_error = COALESCE(?, email_last_error)
+                    WHERE internal_id = ?
+                `
+                )
+                .run(safeFailure, internalId);
+        },
+
+        listReadyEmailJobsDue(now: string, limit: number): JobRecord[] {
+            const rows = database
+                .prepare(
+                    `
+                    SELECT * FROM jobs
+                    WHERE status = 'ready'
+                        AND email_status = 'pending'
+                        AND email IS NOT NULL
+                        AND expires_at IS NOT NULL
+                        AND expires_at > ?
+                        AND (email_next_attempt_at IS NULL OR email_next_attempt_at <= ?)
+                    ORDER BY COALESCE(email_next_attempt_at, completed_at, created_at) ASC
+                    LIMIT ?
+                `
+                )
+                .all(now, now, limit) as Array<Record<string, unknown>>;
+
+            return rows.map(rowToJob);
+        },
+
+        expirePendingEmails(now: string) {
+            database
+                .prepare(
+                    `
+                    UPDATE jobs
+                    SET email_status = 'failed',
+                        email = NULL,
+                        email_next_attempt_at = NULL,
+                        email_last_error = 'expired'
+                    WHERE status = 'ready'
+                        AND email_status = 'pending'
+                        AND expires_at IS NOT NULL
+                        AND expires_at <= ?
+                `
+                )
+                .run(now);
         },
 
         /**
@@ -485,8 +885,8 @@ export const createJobRepository = (database: Database.Database) => {
          * Clearing both token hashes invalidates emailed links and browser-session downloads while
          * preserving the public job record for status display.
          */
-        markExpired(internalId: string, now: string) {
-            database
+        markExpired(internalId: string, now: string): boolean {
+            const result = database
                 .prepare(
                     `
                     UPDATE jobs
@@ -500,6 +900,36 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(now, internalId);
+            database
+                .prepare(
+                    `
+                    UPDATE browser_download_grants
+                    SET used_at = COALESCE(used_at, ?)
+                    WHERE internal_id = ? AND used_at IS NULL
+                `
+                )
+                .run(now, internalId);
+
+            return result.changes === 1;
+        },
+
+        purgeBrowserDownloadGrants(now: string, usedBefore: string): number {
+            const result = database
+                .prepare(
+                    `
+                    DELETE FROM browser_download_grants
+                    WHERE expires_at <= ?
+                        OR (used_at IS NOT NULL AND used_at <= ?)
+                        OR internal_id IN (
+                            SELECT internal_id
+                            FROM jobs
+                            WHERE status = 'expired'
+                        )
+                `
+                )
+                .run(now, usedBefore);
+
+            return result.changes;
         },
 
         listFailedJobsWithFiles(): JobRecord[] {
@@ -508,6 +938,27 @@ export const createJobRepository = (database: Database.Database) => {
                 .all() as Array<Record<string, unknown>>;
 
             return rows.map(rowToJob);
+        },
+
+        listKnownInternalIds(): string[] {
+            const rows = database.prepare("SELECT internal_id FROM jobs").all() as Array<{
+                internal_id: string;
+            }>;
+
+            return rows.map((row) => row.internal_id);
+        },
+
+        anonymizeFailedJob(internalId: string) {
+            database
+                .prepare(
+                    `
+                    UPDATE jobs
+                    SET email = NULL,
+                        display_filename = 'audiobook'
+                    WHERE internal_id = ? AND status = 'failed'
+                `
+                )
+                .run(internalId);
         }
     };
 };

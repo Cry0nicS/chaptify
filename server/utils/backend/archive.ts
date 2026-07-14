@@ -5,6 +5,11 @@ import {ZipArchive} from "archiver";
 import {PublicJobError} from "./errors";
 import {ensurePathInside} from "./paths";
 
+export interface CreateChapterZipOptions {
+    signal?: AbortSignal;
+    beforeFinalize?: () => Promise<void> | void;
+}
+
 /**
  * Streams chapter files into the final ZIP archive under the job output directory.
  *
@@ -15,7 +20,8 @@ export const createChapterZip = async (
     storageRoot: string,
     outputDirectory: string,
     archiveName: string,
-    chapterPaths: string[]
+    chapterPaths: string[],
+    options: CreateChapterZipOptions = {}
 ): Promise<string> => {
     const zipPath = ensurePathInside(storageRoot, join(outputDirectory, archiveName));
 
@@ -23,17 +29,64 @@ export const createChapterZip = async (
         await new Promise<void>((resolve, reject) => {
             const archive = new ZipArchive({zlib: {level: 9}});
             const output = createWriteStream(zipPath, {mode: 0o600});
+            let settled = false;
 
-            output.on("close", resolve);
-            output.on("error", reject);
-            archive.on("error", reject);
+            function abort() {
+                fail(new PublicJobError("PROCESSING_FAILED", "ZIP creation deadline exceeded"));
+            }
+
+            function cleanup() {
+                options.signal?.removeEventListener("abort", abort);
+            }
+
+            function fail(error: unknown) {
+                if (settled) {
+                    return;
+                }
+
+                settled = true;
+                cleanup();
+                archive.abort();
+                output.destroy();
+                reject(error);
+            }
+
+            function done() {
+                if (settled) {
+                    return;
+                }
+
+                settled = true;
+                cleanup();
+                resolve();
+            }
+
+            if (options.signal?.aborted) {
+                abort();
+                return;
+            }
+
+            options.signal?.addEventListener("abort", abort, {once: true});
+
+            output.on("close", done);
+            output.on("error", fail);
+            archive.on("error", fail);
             archive.pipe(output);
 
             for (const chapterPath of chapterPaths) {
                 archive.file(chapterPath, {name: basename(chapterPath)});
             }
 
-            void archive.finalize();
+            void Promise.resolve(options.beforeFinalize?.())
+                .then(() => {
+                    if (options.signal?.aborted) {
+                        abort();
+                        return;
+                    }
+
+                    void archive.finalize();
+                })
+                .catch(fail);
         });
 
         const stats = await stat(zipPath);
@@ -44,6 +97,10 @@ export const createChapterZip = async (
         return zipPath;
     } catch (error) {
         await rm(zipPath, {force: true});
+        if (error instanceof PublicJobError) {
+            throw error;
+        }
+
         throw new PublicJobError("ZIP_CREATION_FAILED", String(error));
     }
 };

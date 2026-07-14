@@ -1,12 +1,13 @@
 services:
-    public-notice:
+    chaptify:
         image: chaptify:latest
         build: .
         command: [node, .output/start.mjs]
         ports:
             - "3000:3000"
         env_file:
-            -   .env
+            - path: .env
+              required: false
         environment:
             NUXT_STORAGE_ROOT: /data/chaptify
         volumes:
@@ -20,15 +21,40 @@ services:
 
     worker:
         image: chaptify:latest
-        build: .
         command: [node, .output/worker.mjs]
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
         env_file:
-            -   .env
+            - path: .env
+              required: false
         environment:
             NUXT_STORAGE_ROOT: /data/chaptify
+            NUXT_MAILGUN_BASE_URL: ${NUXT_MAILGUN_BASE_URL:-}
+            NUXT_MAILGUN_DOMAIN: ${NUXT_MAILGUN_DOMAIN:-}
+            NUXT_MAILGUN_KEY: ${NUXT_MAILGUN_KEY:-}
+            NUXT_MAILGUN_SENDER: ${NUXT_MAILGUN_SENDER:-}
+            NUXT_MAILGUN_RECIPIENT: ${NUXT_MAILGUN_RECIPIENT:-}
+            NUXT_MAILGUN_BCC: ${NUXT_MAILGUN_BCC:-}
         volumes:
             - chaptify-storage:/data/chaptify
         restart: unless-stopped
+        depends_on:
+            - chaptify
+
+    cleanup:
+        image: chaptify:latest
+        command: [node, .output/cleanup.mjs]
+        env_file:
+            - path: .env
+              required: false
+        environment:
+            NUXT_STORAGE_ROOT: /data/chaptify
+            NUXT_CLEANUP_INTERVAL_SECONDS: ${NUXT_CLEANUP_INTERVAL_SECONDS:-5}
+        volumes:
+            - chaptify-storage:/data/chaptify
+        restart: unless-stopped
+        depends_on:
+            - chaptify
 
 volumes:
     chaptify-storage:

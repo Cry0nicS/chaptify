@@ -108,6 +108,9 @@ export const useJobStatus = (options: UseJobStatusOptions = {}) => {
             job.value = parsed;
             transientError.value = null;
             failures.value = 0;
+            if (parsed.status === "expired") {
+                clearActiveJob();
+            }
 
             return parsed;
         } catch (error) {

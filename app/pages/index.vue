@@ -2,6 +2,7 @@
 import type {JobStatusResponse, UploadJobResponse} from "#shared/utils/types";
 import type {FrontendApiError} from "../utils/api-errors";
 import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue";
+import {browserDownloadGrantResponseSchema} from "#shared/utils/schemas";
 import {toFrontendApiError} from "../utils/api-errors";
 import {maskEmailAddress, validateEmailAddress} from "../utils/email";
 import {validateAudiobookFile} from "../utils/file-validation";
@@ -194,12 +195,6 @@ const handleCreatedJob = (created: UploadJobResponse) => {
     startPolling(created.jobId, created.jobAccessToken);
 };
 
-const parseDownloadFilename = (contentDisposition: string | null): string => {
-    const match = contentDisposition?.match(/filename="([^"]+)"/);
-
-    return match?.[1] || "chaptify-chapters.zip";
-};
-
 const downloadReadyJob = async () => {
     if (workflow.value.status !== "ready" || !activeJobAccessToken.value || !import.meta.client) {
         return;
@@ -214,33 +209,23 @@ const downloadReadyJob = async () => {
     isBrowserDownloadStarting.value = true;
 
     try {
-        const response = await fetch(
+        const response = await $fetch<unknown>(
             `/api/jobs/${encodeURIComponent(workflow.value.job.jobId)}/download`,
             {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({jobAccessToken: activeJobAccessToken.value})
+                body: {
+                    jobAccessToken: activeJobAccessToken.value
+                }
             }
         );
+        const parsed = browserDownloadGrantResponseSchema.parse(response);
 
-        if (!response.ok) {
-            throw new Error("The direct download is no longer available.");
-        }
-
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = parseDownloadFilename(response.headers.get("Content-Disposition"));
-        document.body.append(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-    } catch {
+        window.location.assign(parsed.downloadUrl);
+    } catch (error) {
+        const parsedError = toFrontendApiError(error, "The direct download could not be started.");
         browserDownloadError.value =
-            "The direct download could not be started. The emailed link may still work until expiration.";
+            parsedError.guidance ||
+            "The emailed link may still work until expiration if it was delivered.";
     } finally {
         isBrowserDownloadStarting.value = false;
     }

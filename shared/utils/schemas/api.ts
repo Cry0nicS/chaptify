@@ -32,6 +32,10 @@ export const browserDownloadRequestSchema = z.object({
     jobAccessToken: browserJobAccessTokenSchema
 });
 
+export const browserDownloadGrantResponseSchema = z.object({
+    downloadUrl: z.string().min(1)
+});
+
 export const jobStatusResponseSchema = z.object({
     jobId: z.string().min(16),
     status: publicJobStatusSchema,

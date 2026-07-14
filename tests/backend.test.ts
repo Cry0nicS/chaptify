@@ -1,9 +1,11 @@
 import type {BackendConfig} from "../server/utils/backend/config";
-import {access, mkdir, mkdtemp, stat, writeFile} from "node:fs/promises";
+import {spawn} from "node:child_process";
+import {access, mkdir, mkdtemp, readFile, rm, stat, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {createChapterZip} from "../server/utils/backend/archive";
+import {runCleanup} from "../server/utils/backend/cleanup";
 import {ensureStorageRoot, getBackendConfigFromEnv} from "../server/utils/backend/config";
 import {
     createJobRepository,
@@ -13,12 +15,16 @@ import {
 import {loadDotenv, parseDotenv} from "../server/utils/backend/env";
 import {PublicJobError, serializePublicError} from "../server/utils/backend/errors";
 import {
+    createBrowserDownloadGrantToken,
     createBrowserJobAccessToken,
     createDownloadToken,
+    createSignedDownloadToken,
+    hashBrowserDownloadGrantToken,
     hashBrowserJobAccessToken,
-    hashDownloadToken
+    hashDownloadToken,
+    verifySignedDownloadToken
 } from "../server/utils/backend/ids";
-import {validateChapters} from "../server/utils/backend/media";
+import {inspectAudioFile, splitChapters, validateChapters} from "../server/utils/backend/media";
 import {
     buildChapterFilenames,
     ensurePathInside,
@@ -26,7 +32,13 @@ import {
     sanitizeChapterTitle,
     sanitizeDisplayFilename
 } from "../server/utils/backend/paths";
-import {deliverReadyEmail, recoverInterruptedJobs} from "../server/utils/backend/worker";
+import {runProcess} from "../server/utils/backend/process";
+import {
+    deliverDueEmails,
+    deliverReadyEmail,
+    processJob,
+    recoverInterruptedJobs
+} from "../server/utils/backend/worker";
 import {DEFAULT_JOB_RETENTION_HOURS} from "../shared/utils/constants";
 import {uploadMetadataSchema} from "../shared/utils/schemas";
 
@@ -60,9 +72,28 @@ const makeConfig = (storageRoot: string): BackendConfig => ({
     storageRoot,
     maxUploadBytes: 1024,
     maxQueuedJobs: 10,
+    maxConcurrentUploads: 2,
+    perIpUploadLimit: 5,
+    perIpJobLimit: 5,
+    downloadRateLimit: 30,
+    storageReservationMultiplier: 4,
+    storageReservationSafetyBytes: 0,
+    storageReservationTtlMinutes: 30,
+    orphanJobDirectoryMinAgeMinutes: 30,
+    cleanupIntervalSeconds: 300,
+    browserDownloadGrantLifetimeSeconds: 60,
+    browserDownloadGrantUsedGraceSeconds: 300,
     workerConcurrency: 1,
     jobRetentionHours: DEFAULT_JOB_RETENTION_HOURS,
+    maxAudiobookDurationSeconds: 86_400,
+    maxChapters: 300,
+    jobProcessingTimeoutSeconds: 14_400,
+    ffprobeTimeoutSeconds: 30,
+    ffmpegChapterTimeoutSeconds: 1_200,
     emailRetryAttempts: 3,
+    downloadSigningSecret: "test-signing-secret-with-at-least-32-characters",
+    emailRetryBaseDelaySeconds: 1,
+    emailRetryMaxDelaySeconds: 2,
     mailgunBaseUrl: "https://api.mailgun.test",
     mailgunDomain: "example.test",
     mailgunKey: "key-test",
@@ -76,7 +107,7 @@ const createRepository = async () => {
     const database = openDatabase(storageRoot);
     const jobs = createJobRepository(database);
 
-    return {storageRoot, jobs};
+    return {storageRoot, database, jobs};
 };
 
 const createQueuedJob = (jobs: ReturnType<typeof createJobRepository>, storageRoot: string) => {
@@ -91,6 +122,130 @@ const createQueuedJob = (jobs: ReturnType<typeof createJobRepository>, storageRo
         createdAt: new Date().toISOString(),
         browserJobAccessTokenHash: hashBrowserJobAccessToken("browser-token")
     });
+};
+
+const requireFfmpeg = async () => {
+    await expect(runProcess("ffmpeg", ["-version"], 10_000)).resolves.toBeDefined();
+    await expect(runProcess("ffprobe", ["-version"], 10_000)).resolves.toBeDefined();
+};
+
+const writeChapterMetadata = async (path: string) => {
+    await writeFile(
+        path,
+        [
+            ";FFMETADATA1",
+            "title=Synthetic Book",
+            "",
+            "[CHAPTER]",
+            "TIMEBASE=1/1000",
+            "START=0",
+            "END=2000",
+            "title=Intro/One",
+            "",
+            "[CHAPTER]",
+            "TIMEBASE=1/1000",
+            "START=2000",
+            "END=4000",
+            "title=Second: Part"
+        ].join("\n")
+    );
+};
+
+const createSyntheticAudiobook = async (root: string, format: "mp3" | "m4b"): Promise<string> => {
+    await requireFfmpeg();
+    const basePath = join(root, `base.${format === "mp3" ? "mp3" : "m4a"}`);
+    const metadataPath = join(root, "chapters.ffmetadata");
+    const outputPath = join(root, `synthetic.${format}`);
+    await writeChapterMetadata(metadataPath);
+
+    await runProcess(
+        "ffmpeg",
+        [
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=4",
+            "-vn",
+            "-sn",
+            "-dn",
+            "-c:a",
+            format === "mp3" ? "libmp3lame" : "aac",
+            basePath
+        ],
+        30_000
+    );
+    await runProcess(
+        "ffmpeg",
+        [
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            basePath,
+            "-i",
+            metadataPath,
+            "-map_metadata",
+            "1",
+            "-map_chapters",
+            "1",
+            "-c",
+            "copy",
+            outputPath
+        ],
+        30_000
+    );
+
+    return outputPath;
+};
+
+const probeMedia = async (path: string) => {
+    const result = await runProcess(
+        "ffprobe",
+        [
+            "-v",
+            "error",
+            "-show_format",
+            "-show_streams",
+            "-show_chapters",
+            "-print_format",
+            "json",
+            path
+        ],
+        30_000
+    );
+
+    return JSON.parse(result.stdout) as {
+        streams: Array<{codec_type?: string}>;
+        chapters?: unknown[];
+        format: {duration?: string; tags?: Record<string, string>};
+    };
+};
+
+const listZipEntries = async (zipPath: string): Promise<string[]> => {
+    const zipCentralDirectoryHeader = 33_639_248;
+    const bytes = await readFile(zipPath);
+    const entries: string[] = [];
+    let offset = 0;
+
+    while (offset < bytes.length - 46) {
+        if (bytes.readUInt32LE(offset) === zipCentralDirectoryHeader) {
+            const nameLength = bytes.readUInt16LE(offset + 28);
+            const extraLength = bytes.readUInt16LE(offset + 30);
+            const commentLength = bytes.readUInt16LE(offset + 32);
+            entries.push(bytes.subarray(offset + 46, offset + 46 + nameLength).toString("utf8"));
+            offset += 46 + nameLength + extraLength + commentLength;
+            continue;
+        }
+
+        offset += 1;
+    }
+
+    return entries;
 };
 
 afterEach(() => {
@@ -250,6 +405,139 @@ describe("chapter metadata", () => {
     });
 });
 
+describe("synthetic ffmpeg end-to-end media", () => {
+    it.each([
+        ["mp3", "mp3"],
+        ["m4b", "m4a"]
+    ] as const)(
+        "splits a generated %s audiobook into validated chapter outputs",
+        async (inputFormat, outputExtension) => {
+            const root = await makeStorageRoot();
+            const sourcePath = await createSyntheticAudiobook(root, inputFormat);
+            const inspection = await inspectAudioFile(sourcePath, inputFormat);
+            const chaptersDirectory = join(root, "jobs", `${inputFormat}-split`, "chapters");
+            const completed: Array<[number, number]> = [];
+
+            expect(inspection.chapters).toHaveLength(2);
+            expect(inspection.outputExtension).toBe(outputExtension);
+
+            const chapterPaths = await splitChapters(
+                root,
+                sourcePath,
+                chaptersDirectory,
+                inspection,
+                (current, total) => completed.push([current, total])
+            );
+
+            expect(chapterPaths.map((path) => path.split(/[/\\]/).at(-1))).toEqual([
+                `01 - Intro One.${outputExtension}`,
+                `02 - Second Part.${outputExtension}`
+            ]);
+            expect(completed).toEqual([
+                [1, 2],
+                [2, 2]
+            ]);
+
+            for (const [index, chapterPath] of chapterPaths.entries()) {
+                const probed = await probeMedia(chapterPath);
+                const audioStreams = probed.streams.filter(
+                    (stream) => stream.codec_type === "audio"
+                );
+                const nonAudioStreams = probed.streams.filter(
+                    (stream) => stream.codec_type !== "audio"
+                );
+                const tags = probed.format.tags || {};
+
+                expect(audioStreams).toHaveLength(1);
+                expect(nonAudioStreams).toHaveLength(0);
+                expect(probed.chapters || []).toHaveLength(0);
+                expect(Number(probed.format.duration)).toBeGreaterThan(1.5);
+                expect(Number(probed.format.duration)).toBeLessThan(2.5);
+                expect(tags.title).toBe(index === 0 ? "Intro One" : "Second Part");
+                expect(tags.track).toBe(`${index + 1}/2`);
+            }
+        }
+    );
+
+    it.each(["mp3", "m4b"] as const)(
+        "processes a generated %s job to a ready ZIP and removes source/intermediates",
+        async (inputFormat) => {
+            const storageRoot = await makeStorageRoot();
+            const database = openDatabase(storageRoot);
+            const jobs = createJobRepository(database);
+            const sourceDirectory = join(storageRoot, "jobs", `${inputFormat}-job`, "source");
+            await mkdir(sourceDirectory, {recursive: true});
+            const sourcePath = join(sourceDirectory, `source.${inputFormat}`);
+            const generatedPath = await createSyntheticAudiobook(storageRoot, inputFormat);
+            await writeFile(sourcePath, await readFile(generatedPath));
+            jobs.createJob({
+                publicJobId: `${inputFormat}-public-job-id`,
+                internalId: `${inputFormat}-job`,
+                displayFilename: `Synthetic.${inputFormat}`,
+                sourceFormat: inputFormat,
+                fileSize: (await stat(sourcePath)).size,
+                email: "reader@example.test",
+                sourcePath,
+                createdAt: new Date().toISOString(),
+                browserJobAccessTokenHash: hashBrowserJobAccessToken("browser-token")
+            });
+            const claimed = jobs.claimQueuedJob(new Date().toISOString());
+
+            if (!claimed) {
+                throw new Error("Expected queued synthetic job to be claimed");
+            }
+
+            await processJob(makeConfig(storageRoot), jobs, claimed);
+
+            const ready = jobs.findByInternalId(`${inputFormat}-job`);
+            expect(ready?.status).toBe("ready");
+            expect(ready?.zipPath).toEqual(expect.any(String));
+            if (!ready?.zipPath || !ready.expiresAt) {
+                throw new Error("Expected ready ZIP");
+            }
+
+            await expect(access(sourcePath)).rejects.toThrow();
+            await expect(
+                access(join(storageRoot, "jobs", `${inputFormat}-job`, "chapters"))
+            ).rejects.toThrow();
+            expect(await listZipEntries(ready.zipPath)).toEqual(
+                inputFormat === "mp3"
+                    ? ["01 - Intro One.mp3", "02 - Second Part.mp3"]
+                    : ["01 - Intro One.m4a", "02 - Second Part.m4a"]
+            );
+
+            const signed = createSignedDownloadToken({
+                publicJobId: ready.publicJobId,
+                internalId: ready.internalId,
+                expiresAt: ready.expiresAt,
+                signingSecret: makeConfig(storageRoot).downloadSigningSecret || ""
+            });
+            expect(
+                verifySignedDownloadToken({
+                    token: signed,
+                    internalId: ready.internalId,
+                    expiresAt: ready.expiresAt,
+                    signingSecret: makeConfig(storageRoot).downloadSigningSecret || ""
+                })
+            ).toBe(true);
+            expect(
+                verifySignedDownloadToken({
+                    token: signed,
+                    internalId: "wrong-job",
+                    expiresAt: ready.expiresAt,
+                    signingSecret: makeConfig(storageRoot).downloadSigningSecret || ""
+                })
+            ).toBe(false);
+
+            database
+                .prepare("UPDATE jobs SET expires_at = ? WHERE internal_id = ?")
+                .run("2026-07-11T00:00:00.000Z", ready.internalId);
+            await runCleanup(makeConfig(storageRoot), jobs);
+            await expect(access(ready.zipPath)).rejects.toThrow();
+        }
+    );
+});
+
 describe("tokens and persistence", () => {
     it("generates hash-only download token values", () => {
         const token = createDownloadToken();
@@ -267,6 +555,40 @@ describe("tokens and persistence", () => {
         expect(token).not.toBe(hash);
         expect(token.length).toBeGreaterThanOrEqual(40);
         expect(hash).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it("creates deterministic signed download links that require the server secret", () => {
+        const token = createSignedDownloadToken({
+            publicJobId: "public-job-id",
+            internalId: "internal-job-id",
+            expiresAt: "2026-07-11T13:00:00.000Z",
+            signingSecret: "test-signing-secret-with-at-least-32-characters"
+        });
+
+        expect(token).toBe(
+            createSignedDownloadToken({
+                publicJobId: "public-job-id",
+                internalId: "internal-job-id",
+                expiresAt: "2026-07-11T13:00:00.000Z",
+                signingSecret: "test-signing-secret-with-at-least-32-characters"
+            })
+        );
+        expect(
+            verifySignedDownloadToken({
+                token,
+                internalId: "internal-job-id",
+                expiresAt: "2026-07-11T13:00:00.000Z",
+                signingSecret: "test-signing-secret-with-at-least-32-characters"
+            })
+        ).toBe(true);
+        expect(
+            verifySignedDownloadToken({
+                token,
+                internalId: "other-job-id",
+                expiresAt: "2026-07-11T13:00:00.000Z",
+                signingSecret: "test-signing-secret-with-at-least-32-characters"
+            })
+        ).toBe(false);
     });
 
     it("claims queued jobs atomically and updates state transitions", async () => {
@@ -311,6 +633,233 @@ describe("tokens and persistence", () => {
         await expect(access(sourcePath)).resolves.toBeUndefined();
         await expect(access(chapterPath)).rejects.toThrow();
         await expect(access(outputPath)).rejects.toThrow();
+    });
+
+    it("keeps ready ZIP and sends email when post-ready chapter cleanup fails", async () => {
+        const {storageRoot, jobs} = await createRepository();
+        createQueuedJob(jobs, storageRoot);
+        jobs.createStorageReservationIfCapacity(
+            {
+                ownerId: "internal-job-id",
+                reservedBytes: 80,
+                createdAt: new Date().toISOString(),
+                expiresAt: new Date(Date.now() + 60_000).toISOString()
+            },
+            1000
+        );
+        const sourceDirectory = join(storageRoot, "jobs", "internal-job-id", "source");
+        const sourcePath = join(sourceDirectory, "source.m4b");
+        await mkdir(sourceDirectory, {recursive: true});
+        await writeFile(sourcePath, "source");
+        const claimed = jobs.claimQueuedJob(new Date().toISOString());
+        if (!claimed) {
+            throw new Error("Expected claimed job");
+        }
+        const deliverReadyEmailMock = vi.fn(async () => {});
+
+        await processJob(makeConfig(storageRoot), jobs, claimed, {
+            inspectAudioFile: async () => ({
+                duration: 2,
+                audioCodec: "aac",
+                chapters: [{title: "Intro", start: 0, end: 2}],
+                outputExtension: "m4a",
+                bookTitle: null
+            }),
+            splitChapters: async (_root, _source, chaptersDirectory) => {
+                const chapterPath = join(chaptersDirectory, "01 - Intro.m4a");
+                await writeFile(chapterPath, "chapter");
+
+                return [chapterPath];
+            },
+            createChapterZip: async (_root, outputDirectory, archiveName) => {
+                const zipPath = join(outputDirectory, archiveName);
+                await writeFile(zipPath, "zip");
+
+                return zipPath;
+            },
+            removePath: async (path, options) => {
+                if (String(path).endsWith(join("chapters"))) {
+                    throw new Error("chapter cleanup failed");
+                }
+
+                await rm(path, options);
+            },
+            deliverReadyEmail: deliverReadyEmailMock
+        });
+
+        const ready = jobs.findByInternalId("internal-job-id");
+        expect(ready?.status).toBe("ready");
+        expect(ready?.zipPath).toEqual(expect.any(String));
+        await expect(access(ready?.zipPath || "")).resolves.toBeUndefined();
+        expect(deliverReadyEmailMock).toHaveBeenCalledTimes(1);
+        expect(jobs.getActiveStorageReservation("internal-job-id")).toBeDefined();
+    });
+
+    it("keeps ready ZIP and sends email when post-ready source cleanup fails", async () => {
+        const {storageRoot, jobs} = await createRepository();
+        createQueuedJob(jobs, storageRoot);
+        const sourceDirectory = join(storageRoot, "jobs", "internal-job-id", "source");
+        const sourcePath = join(sourceDirectory, "source.m4b");
+        await mkdir(sourceDirectory, {recursive: true});
+        await writeFile(sourcePath, "source");
+        const claimed = jobs.claimQueuedJob(new Date().toISOString());
+        if (!claimed) {
+            throw new Error("Expected claimed job");
+        }
+        const deliverReadyEmailMock = vi.fn(async () => {});
+
+        await processJob(makeConfig(storageRoot), jobs, claimed, {
+            inspectAudioFile: async () => ({
+                duration: 2,
+                audioCodec: "aac",
+                chapters: [{title: "Intro", start: 0, end: 2}],
+                outputExtension: "m4a",
+                bookTitle: null
+            }),
+            splitChapters: async (_root, _source, chaptersDirectory) => {
+                const chapterPath = join(chaptersDirectory, "01 - Intro.m4a");
+                await writeFile(chapterPath, "chapter");
+
+                return [chapterPath];
+            },
+            createChapterZip: async (_root, outputDirectory, archiveName) => {
+                const zipPath = join(outputDirectory, archiveName);
+                await writeFile(zipPath, "zip");
+
+                return zipPath;
+            },
+            removePath: async (path, options) => {
+                if (String(path) === sourcePath) {
+                    throw new Error("source cleanup failed");
+                }
+
+                await rm(path, options);
+            },
+            deliverReadyEmail: deliverReadyEmailMock
+        });
+
+        const ready = jobs.findByInternalId("internal-job-id");
+        expect(ready?.status).toBe("ready");
+        await expect(access(ready?.zipPath || "")).resolves.toBeUndefined();
+        expect(deliverReadyEmailMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not delete files or send email when ready transition loses the race", async () => {
+        const {storageRoot, jobs} = await createRepository();
+        createQueuedJob(jobs, storageRoot);
+        const sourceDirectory = join(storageRoot, "jobs", "internal-job-id", "source");
+        const sourcePath = join(sourceDirectory, "source.m4b");
+        await mkdir(sourceDirectory, {recursive: true});
+        await writeFile(sourcePath, "source");
+        const claimed = jobs.claimQueuedJob(new Date().toISOString());
+        if (!claimed) {
+            throw new Error("Expected claimed job");
+        }
+        const deliverReadyEmailMock = vi.fn(async () => {});
+        const removePathMock = vi.fn(rm);
+
+        await processJob(makeConfig(storageRoot), jobs, claimed, {
+            inspectAudioFile: async () => ({
+                duration: 2,
+                audioCodec: "aac",
+                chapters: [{title: "Intro", start: 0, end: 2}],
+                outputExtension: "m4a",
+                bookTitle: null
+            }),
+            splitChapters: async (_root, _source, chaptersDirectory) => {
+                const chapterPath = join(chaptersDirectory, "01 - Intro.m4a");
+                await writeFile(chapterPath, "chapter");
+
+                return [chapterPath];
+            },
+            createChapterZip: async (_root, outputDirectory, archiveName) => {
+                const zipPath = join(outputDirectory, archiveName);
+                await writeFile(zipPath, "zip");
+
+                return zipPath;
+            },
+            beforeMarkReady: () => {
+                jobs.markFailed(
+                    "internal-job-id",
+                    "PROCESSING_FAILED",
+                    "changed elsewhere",
+                    new Date().toISOString()
+                );
+            },
+            removePath: removePathMock,
+            deliverReadyEmail: deliverReadyEmailMock
+        });
+
+        expect(jobs.findByInternalId("internal-job-id")?.status).toBe("failed");
+        expect(removePathMock).not.toHaveBeenCalled();
+        expect(deliverReadyEmailMock).not.toHaveBeenCalled();
+        await expect(access(sourcePath)).resolves.toBeUndefined();
+    });
+
+    it("applies the total processing deadline to ZIP finalization", async () => {
+        const {storageRoot, jobs} = await createRepository();
+        createQueuedJob(jobs, storageRoot);
+        jobs.createStorageReservationIfCapacity(
+            {
+                ownerId: "internal-job-id",
+                reservedBytes: 80,
+                createdAt: new Date().toISOString(),
+                expiresAt: new Date(Date.now() + 60_000).toISOString()
+            },
+            1000
+        );
+        const sourceDirectory = join(storageRoot, "jobs", "internal-job-id", "source");
+        const sourcePath = join(sourceDirectory, "source.m4b");
+        await mkdir(sourceDirectory, {recursive: true});
+        await writeFile(sourcePath, "source");
+        const claimed = jobs.claimQueuedJob(new Date().toISOString());
+        if (!claimed) {
+            throw new Error("Expected claimed job");
+        }
+
+        await processJob(
+            {...makeConfig(storageRoot), jobProcessingTimeoutSeconds: 1},
+            jobs,
+            claimed,
+            {
+                inspectAudioFile: async () => ({
+                    duration: 2,
+                    audioCodec: "aac",
+                    chapters: [{title: "Intro", start: 0, end: 2}],
+                    outputExtension: "m4a",
+                    bookTitle: null
+                }),
+                splitChapters: async (_root, _source, chaptersDirectory) => {
+                    const chapterPath = join(chaptersDirectory, "01 - Intro.m4a");
+                    await writeFile(chapterPath, "chapter");
+
+                    return [chapterPath];
+                },
+                createChapterZip: async (
+                    root,
+                    outputDirectory,
+                    archiveName,
+                    chapterPaths,
+                    options
+                ) =>
+                    await createChapterZip(root, outputDirectory, archiveName, chapterPaths, {
+                        signal: options?.signal,
+                        beforeFinalize: async () =>
+                            await new Promise<void>((resolve) => {
+                                options?.signal?.addEventListener("abort", () => resolve(), {
+                                    once: true
+                                });
+                            })
+                    })
+            }
+        );
+
+        const failed = jobs.findByInternalId("internal-job-id");
+        expect(failed?.status).toBe("failed");
+        await expect(
+            access(join(storageRoot, "jobs", "internal-job-id", "output"))
+        ).rejects.toThrow();
+        expect(jobs.getActiveStorageReservation("internal-job-id")).toBeUndefined();
     });
 
     it("expires ready jobs and rejects expired token lookups", async () => {
@@ -363,6 +912,142 @@ describe("tokens and persistence", () => {
         jobs.markExpired("internal-job-id", "2026-07-11T13:00:00.000Z");
         expect(jobs.findByPublicId("public-job-id")?.browserJobAccessTokenHash).toBeNull();
     });
+
+    it("purges used, expired, and expired-job browser download grants idempotently", async () => {
+        const {storageRoot, database, jobs} = await createRepository();
+        createQueuedJob(jobs, storageRoot);
+        jobs.claimQueuedJob(new Date().toISOString());
+        jobs.markReady(
+            "internal-job-id",
+            join(storageRoot, "jobs", "internal-job-id", "output", "book.zip"),
+            null,
+            "2026-07-11T12:00:00.000Z",
+            "2026-07-11T14:00:00.000Z"
+        );
+        const validToken = createBrowserDownloadGrantToken();
+        const usedToken = createBrowserDownloadGrantToken();
+        const expiredToken = createBrowserDownloadGrantToken();
+        for (const [token, expiresAt] of [
+            [validToken, "2026-07-11T13:00:00.000Z"],
+            [usedToken, "2026-07-11T13:00:00.000Z"],
+            [expiredToken, "2026-07-11T12:01:00.000Z"]
+        ] as const) {
+            jobs.createBrowserDownloadGrant({
+                publicJobId: "public-job-id",
+                internalId: "internal-job-id",
+                tokenHash: hashBrowserDownloadGrantToken(token),
+                createdAt: "2026-07-11T12:00:00.000Z",
+                expiresAt
+            });
+        }
+
+        expect(
+            jobs.consumeBrowserDownloadGrant(
+                hashBrowserDownloadGrantToken(usedToken),
+                "2026-07-11T12:02:00.000Z"
+            )?.publicJobId
+        ).toBe("public-job-id");
+        jobs.purgeBrowserDownloadGrants("2026-07-11T12:10:00.000Z", "2026-07-11T12:05:00.000Z");
+
+        let count = database
+            .prepare("SELECT COUNT(*) AS count FROM browser_download_grants")
+            .get() as {count: number};
+        expect(count.count).toBe(1);
+        expect(
+            jobs.consumeBrowserDownloadGrant(
+                hashBrowserDownloadGrantToken(validToken),
+                "2026-07-11T12:10:00.000Z"
+            )?.publicJobId
+        ).toBe("public-job-id");
+
+        jobs.markExpired("internal-job-id", "2026-07-11T12:11:00.000Z");
+        jobs.purgeBrowserDownloadGrants("2026-07-11T12:11:00.000Z", "2026-07-11T12:11:00.000Z");
+        jobs.purgeBrowserDownloadGrants("2026-07-11T12:11:00.000Z", "2026-07-11T12:11:00.000Z");
+        count = database.prepare("SELECT COUNT(*) AS count FROM browser_download_grants").get() as {
+            count: number;
+        };
+        expect(count.count).toBe(0);
+    });
+
+    it("atomically prevents storage reservations from oversubscribing available capacity", async () => {
+        const {jobs} = await createRepository();
+        const now = "2026-07-11T12:00:00.000Z";
+        const expiresAt = "2026-07-11T14:00:00.000Z";
+
+        expect(
+            jobs.createStorageReservationIfCapacity(
+                {ownerId: "first", reservedBytes: 80, createdAt: now, expiresAt},
+                100
+            )
+        ).toBe(true);
+        expect(
+            jobs.createStorageReservationIfCapacity(
+                {ownerId: "second", reservedBytes: 80, createdAt: now, expiresAt},
+                100
+            )
+        ).toBe(false);
+
+        jobs.releaseStorageReservation("first", "2026-07-11T12:01:00.000Z");
+        expect(
+            jobs.createStorageReservationIfCapacity(
+                {ownerId: "second", reservedBytes: 80, createdAt: now, expiresAt},
+                100
+            )
+        ).toBe(true);
+    });
+
+    it("recovers abandoned storage reservations after their expiry", async () => {
+        const {storageRoot, jobs} = await createRepository();
+
+        expect(
+            jobs.createStorageReservationIfCapacity(
+                {
+                    ownerId: "abandoned",
+                    reservedBytes: 80,
+                    createdAt: "2026-07-11T12:00:00.000Z",
+                    expiresAt: "2026-07-11T12:30:00.000Z"
+                },
+                100
+            )
+        ).toBe(true);
+
+        await runCleanup(makeConfig(storageRoot), jobs);
+        jobs.releaseExpiredStorageReservations("2026-07-11T12:31:00.000Z");
+        expect(
+            jobs.createStorageReservationIfCapacity(
+                {
+                    ownerId: "replacement",
+                    reservedBytes: 80,
+                    createdAt: "2026-07-11T12:31:00.000Z",
+                    expiresAt: "2026-07-11T13:00:00.000Z"
+                },
+                100
+            )
+        ).toBe(true);
+    });
+
+    it("keeps expired-TTL reservations for live jobs", async () => {
+        const {storageRoot, jobs} = await createRepository();
+        createQueuedJob(jobs, storageRoot);
+        expect(
+            jobs.createStorageReservationIfCapacity(
+                {
+                    ownerId: "internal-job-id",
+                    reservedBytes: 80,
+                    createdAt: "2026-07-11T12:00:00.000Z",
+                    expiresAt: "2026-07-11T12:30:00.000Z"
+                },
+                100
+            )
+        ).toBe(true);
+
+        jobs.releaseExpiredStorageReservations("2026-07-11T12:31:00.000Z");
+
+        expect(jobs.getActiveStorageReservation("internal-job-id")).toMatchObject({
+            ownerId: "internal-job-id",
+            reservedBytes: 80
+        });
+    });
 });
 
 describe("cleanup and archive safety", () => {
@@ -388,6 +1073,91 @@ describe("cleanup and archive safety", () => {
 
         expect(zipStats.size).toBeGreaterThan(0);
     });
+
+    it("anonymizes failed jobs and removes orphan directories during cleanup", async () => {
+        const {storageRoot, jobs} = await createRepository();
+        createQueuedJob(jobs, storageRoot);
+        jobs.claimQueuedJob(new Date().toISOString());
+        jobs.markFailed(
+            "internal-job-id",
+            "PROCESSING_FAILED",
+            "private diagnostic",
+            new Date().toISOString()
+        );
+        const orphanDirectory = join(storageRoot, "jobs", "orphan-job");
+        await mkdir(orphanDirectory, {recursive: true});
+        await writeFile(join(orphanDirectory, "file.txt"), "orphan");
+
+        await runCleanup({...makeConfig(storageRoot), orphanJobDirectoryMinAgeMinutes: 0}, jobs);
+
+        const failed = jobs.findByInternalId("internal-job-id");
+        expect(failed?.email).toBeNull();
+        expect(failed?.displayFilename).toBe("audiobook");
+        await expect(access(orphanDirectory)).rejects.toThrow();
+    });
+
+    it("does not delete an upload-promoted job directory while its reservation is active", async () => {
+        const {storageRoot, jobs} = await createRepository();
+        const reservedDirectory = join(storageRoot, "jobs", "reserved-internal-id");
+        await mkdir(reservedDirectory, {recursive: true});
+        await writeFile(join(reservedDirectory, "file.txt"), "upload");
+        jobs.createStorageReservationIfCapacity(
+            {
+                ownerId: "reserved-internal-id",
+                reservedBytes: 80,
+                createdAt: "2026-07-11T12:00:00.000Z",
+                expiresAt: new Date(Date.now() + 60_000).toISOString()
+            },
+            100
+        );
+
+        await runCleanup({...makeConfig(storageRoot), orphanJobDirectoryMinAgeMinutes: 0}, jobs);
+
+        await expect(access(reservedDirectory)).resolves.toBeUndefined();
+    });
+
+    it("cleanup daemon exits promptly from an idle long interval after SIGTERM", async () => {
+        const storageRoot = await makeStorageRoot();
+        const tsxCli = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+        const child = spawn(process.execPath, [tsxCli, "server/cleanup.ts"], {
+            cwd: process.cwd(),
+            env: {
+                ...process.env,
+                NUXT_STORAGE_ROOT: storageRoot,
+                NUXT_CLEANUP_INTERVAL_SECONDS: "3600"
+            },
+            stdio: "ignore",
+            windowsHide: true
+        });
+        const heartbeatPath = join(storageRoot, "cleanup-heartbeat.json");
+
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+            try {
+                await access(heartbeatPath);
+                break;
+            } catch {
+                await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+        }
+        await expect(access(heartbeatPath)).resolves.toBeUndefined();
+
+        const exited = new Promise<number | null>((resolve) => {
+            child.once("exit", (code) => resolve(code));
+        });
+        const startedAt = Date.now();
+        child.kill("SIGTERM");
+        const code = await Promise.race([
+            exited,
+            new Promise<"timeout">((resolve) => setTimeout(resolve, 4000, "timeout"))
+        ]);
+
+        if (code === "timeout") {
+            child.kill("SIGKILL");
+        }
+
+        expect(code).not.toBe("timeout");
+        expect(Date.now() - startedAt).toBeLessThan(4000);
+    }, 10_000);
 });
 
 describe("mailgun delivery", () => {
@@ -411,7 +1181,7 @@ describe("mailgun delivery", () => {
             throw new Error("Expected ready job");
         }
 
-        await deliverReadyEmail(makeConfig(storageRoot), jobs, job, "token");
+        await deliverReadyEmail(makeConfig(storageRoot), jobs, job);
 
         const updated = jobs.findByInternalId("internal-job-id");
         expect(updated?.emailStatus).toBe("sent");
@@ -438,16 +1208,33 @@ describe("mailgun delivery", () => {
             throw new Error("Expected ready job");
         }
 
-        await deliverReadyEmail(
-            {...makeConfig(storageRoot), emailRetryAttempts: 2},
-            jobs,
-            job,
-            "token"
-        );
+        await deliverReadyEmail({...makeConfig(storageRoot), emailRetryAttempts: 2}, jobs, job);
 
         const updated = jobs.findByInternalId("internal-job-id");
         expect(updated?.status).toBe("ready");
-        expect(updated?.emailStatus).toBe("failed");
-        expect(updated?.emailAttempts).toBe(2);
+        expect(updated?.emailStatus).toBe("pending");
+        expect(updated?.emailAttempts).toBe(1);
+        expect(updated?.emailNextAttemptAt).toEqual(expect.any(String));
+    });
+
+    it("rediscovers ready pending email after restart and sends it", async () => {
+        const mocked = await import("mailgun.js");
+        const create = Reflect.get(mocked, "__mailgunCreate") as ReturnType<typeof vi.fn>;
+        create.mockResolvedValueOnce({});
+        const {storageRoot, jobs} = await createRepository();
+        createQueuedJob(jobs, storageRoot);
+        jobs.claimQueuedJob(new Date().toISOString());
+        jobs.markReady(
+            "internal-job-id",
+            join(storageRoot, "jobs", "internal-job-id", "output", "book.zip"),
+            null,
+            new Date().toISOString(),
+            new Date(Date.now() + 60_000).toISOString()
+        );
+
+        await deliverDueEmails(makeConfig(storageRoot), jobs);
+
+        expect(jobs.findByInternalId("internal-job-id")?.emailStatus).toBe("sent");
+        expect(create).toHaveBeenCalledTimes(1);
     });
 });

@@ -8,19 +8,30 @@ import {createBackendContext} from "../../utils/backend/context";
 import {PublicJobError} from "../../utils/backend/errors";
 import {
     createBrowserJobAccessToken,
+    createInternalId,
     createPublicId,
     hashBrowserJobAccessToken
 } from "../../utils/backend/ids";
 import {ensurePathInside} from "../../utils/backend/paths";
 import {
+    checkJobCreationLimit,
+    checkUploadRateLimit,
+    getClientIp,
+    releaseUploadSlot,
+    tryAcquireUploadSlot
+} from "../../utils/backend/rate-limits";
+import {
+    calculateStorageReservationBytes,
+    cleanupJobFiles,
     createJobStorage,
     detectUploadExtension,
-    ensureEnoughStorage
+    getAvailableStorageBytes
 } from "../../utils/backend/storage";
 
 const fieldsSchema = z.object({
     email: z.string().email().max(320)
 });
+const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
 
 const collectUploadedFilePaths = (files: formidable.Files): string[] =>
     Object.values(files)
@@ -31,20 +42,23 @@ const collectUploadedFilePaths = (files: formidable.Files): string[] =>
 const parseMultipartUpload = async (
     event: H3Event,
     storageRoot: string,
-    maxUploadBytes: number
+    maxUploadBytes: number,
+    onFileBegin: (path: string) => void
 ) => {
     const uploadDirectory = ensurePathInside(storageRoot, join(storageRoot, "uploads"));
     await mkdir(uploadDirectory, {recursive: true, mode: 0o700});
 
     const form = formidable({
         uploadDir: uploadDirectory,
+        maxFields: 1,
+        maxFieldsSize: 512,
         maxFiles: 1,
         maxFileSize: maxUploadBytes,
         multiples: false,
         allowEmptyFiles: false,
         filter(part) {
             if (part.name !== "file") {
-                return true;
+                return false;
             }
 
             return Boolean(part.originalFilename && detectUploadExtension(part.originalFilename));
@@ -58,6 +72,11 @@ const parseMultipartUpload = async (
         fields: formidable.Fields;
         files: formidable.Files;
     }>((resolve, reject) => {
+        form.on("fileBegin", (_name, file) => {
+            if (file.filepath) {
+                onFileBegin(file.filepath);
+            }
+        });
         form.parse(event.node.req, (error, fields, files) => {
             if (error) {
                 reject(error);
@@ -67,6 +86,18 @@ const parseMultipartUpload = async (
             resolve({fields, files});
         });
     });
+};
+
+const estimateUploadReservationBytes = (event: H3Event, maxUploadBytes: number): number => {
+    const contentLengthHeader = getHeader(event, "content-length");
+    const contentLength =
+        typeof contentLengthHeader === "string" ? Number(contentLengthHeader) : Number.NaN;
+
+    if (Number.isFinite(contentLength) && contentLength > 0) {
+        return Math.min(contentLength, maxUploadBytes + MULTIPART_OVERHEAD_BYTES);
+    }
+
+    return maxUploadBytes + MULTIPART_OVERHEAD_BYTES;
 };
 
 /**
@@ -79,6 +110,7 @@ const parseMultipartUpload = async (
  */
 export default defineEventHandler(async (event) => {
     const {config, jobs} = await createBackendContext();
+    const clientIp = getClientIp(event);
 
     if (jobs.countQueuedJobs() >= config.maxQueuedJobs) {
         throw createError({
@@ -93,8 +125,22 @@ export default defineEventHandler(async (event) => {
         });
     }
 
+    if (!tryAcquireUploadSlot(config.maxConcurrentUploads)) {
+        throw createError({
+            statusCode: 429,
+            statusMessage: "Too many active uploads",
+            data: {
+                error: {
+                    code: "UPLOAD_LIMIT_EXCEEDED",
+                    message: "Too many uploads are active. Please try again shortly."
+                }
+            }
+        });
+    }
+
     const contentLength = Number(getHeader(event, "content-length") || 0);
-    if (contentLength > config.maxUploadBytes) {
+    if (contentLength > config.maxUploadBytes + MULTIPART_OVERHEAD_BYTES) {
+        releaseUploadSlot();
         throw createError({
             statusCode: 413,
             statusMessage: "File too large",
@@ -104,9 +150,67 @@ export default defineEventHandler(async (event) => {
 
     let tempPaths: string[] = [];
     let tempPath: string | null = null;
+    const internalId = createInternalId();
+    let reservationOwnerId: string | null = internalId;
+    let storedInternalId: string | null = null;
 
     try {
-        const parsed = await parseMultipartUpload(event, config.storageRoot, config.maxUploadBytes);
+        if (!checkUploadRateLimit(clientIp, config.perIpUploadLimit, 60 * 60 * 1000)) {
+            throw createError({
+                statusCode: 429,
+                statusMessage: "Upload rate limit exceeded",
+                data: {
+                    error: {
+                        code: "UPLOAD_RATE_LIMIT_EXCEEDED",
+                        message: "Too many uploads were started from this network."
+                    }
+                }
+            });
+        }
+
+        const availableBytes = await getAvailableStorageBytes(config.storageRoot);
+        if (availableBytes === null && process.env.NODE_ENV === "production") {
+            throw new PublicJobError("STORAGE_CAPACITY_EXCEEDED");
+        }
+
+        if (availableBytes !== null) {
+            const now = new Date();
+            const estimatedUploadBytes = estimateUploadReservationBytes(
+                event,
+                config.maxUploadBytes
+            );
+            const reservedBytes = calculateStorageReservationBytes(
+                estimatedUploadBytes,
+                config.storageReservationMultiplier,
+                config.storageReservationSafetyBytes
+            );
+            const reserved = jobs.createStorageReservationIfCapacity(
+                {
+                    ownerId: internalId,
+                    reservedBytes,
+                    createdAt: now.toISOString(),
+                    expiresAt: new Date(
+                        now.getTime() + config.storageReservationTtlMinutes * 60 * 1000
+                    ).toISOString()
+                },
+                availableBytes
+            );
+
+            if (!reserved) {
+                throw new PublicJobError("STORAGE_CAPACITY_EXCEEDED");
+            }
+        } else {
+            reservationOwnerId = null;
+        }
+
+        const parsed = await parseMultipartUpload(
+            event,
+            config.storageRoot,
+            config.maxUploadBytes,
+            (path) => {
+                tempPaths.push(path);
+            }
+        );
         tempPaths = collectUploadedFilePaths(parsed.files);
         const emailValues = Array.isArray(parsed.fields.email)
             ? parsed.fields.email
@@ -145,31 +249,70 @@ export default defineEventHandler(async (event) => {
             extension
         });
 
-        if (!(await ensureEnoughStorage(config.storageRoot, fileSize))) {
-            throw new PublicJobError("STORAGE_CAPACITY_EXCEEDED");
-        }
-
         if (!tempPath) {
             throw new PublicJobError("UNSUPPORTED_FILE_TYPE", "Upload temp file was not available");
         }
 
-        const storedUpload = await createJobStorage(config.storageRoot, tempPath, originalFilename);
+        const storedUpload = await createJobStorage(
+            config.storageRoot,
+            tempPath,
+            originalFilename,
+            internalId
+        );
+        storedInternalId = storedUpload.internalId;
+
         tempPath = null;
         tempPaths = [];
+        if (!checkJobCreationLimit(clientIp, config.perIpJobLimit, 60 * 60 * 1000)) {
+            await cleanupJobFiles(config.storageRoot, storedUpload.internalId);
+            if (reservationOwnerId) {
+                jobs.releaseStorageReservation(reservationOwnerId, new Date().toISOString());
+            }
+            throw createError({
+                statusCode: 429,
+                statusMessage: "Job rate limit exceeded",
+                data: {
+                    error: {
+                        code: "JOB_RATE_LIMIT_EXCEEDED",
+                        message: "Too many jobs were created from this network."
+                    }
+                }
+            });
+        }
+
         const publicJobId = createPublicId();
         const jobAccessToken = createBrowserJobAccessToken();
         const createdAt = new Date().toISOString();
-        jobs.createJob({
-            publicJobId,
-            internalId: storedUpload.internalId,
-            displayFilename: storedUpload.displayFilename,
-            sourceFormat: storedUpload.sourceFormat,
-            fileSize: storedUpload.fileSize,
-            email,
-            sourcePath: storedUpload.sourcePath,
-            createdAt,
-            browserJobAccessTokenHash: hashBrowserJobAccessToken(jobAccessToken)
-        });
+        const created = jobs.createJobIfCapacity(
+            {
+                publicJobId,
+                internalId: storedUpload.internalId,
+                displayFilename: storedUpload.displayFilename,
+                sourceFormat: storedUpload.sourceFormat,
+                fileSize: storedUpload.fileSize,
+                email,
+                sourcePath: storedUpload.sourcePath,
+                createdAt,
+                browserJobAccessTokenHash: hashBrowserJobAccessToken(jobAccessToken)
+            },
+            config.maxQueuedJobs
+        );
+        if (!created) {
+            await cleanupJobFiles(config.storageRoot, storedUpload.internalId);
+            if (reservationOwnerId) {
+                jobs.releaseStorageReservation(reservationOwnerId, new Date().toISOString());
+            }
+            throw createError({
+                statusCode: 503,
+                statusMessage: "Queue capacity exceeded",
+                data: {
+                    error: {
+                        code: "QUEUE_CAPACITY_EXCEEDED",
+                        message: "The processing queue is full. Please try again later."
+                    }
+                }
+            });
+        }
         setResponseStatus(event, 202);
 
         return {
@@ -181,6 +324,12 @@ export default defineEventHandler(async (event) => {
     } catch (error) {
         for (const path of tempPath ? [...tempPaths, tempPath] : tempPaths) {
             await rm(path, {force: true});
+        }
+        if (storedInternalId) {
+            await cleanupJobFiles(config.storageRoot, storedInternalId);
+        }
+        if (reservationOwnerId) {
+            jobs.releaseStorageReservation(reservationOwnerId, new Date().toISOString());
         }
 
         if (error instanceof PublicJobError) {
@@ -229,5 +378,7 @@ export default defineEventHandler(async (event) => {
         }
 
         throw error;
+    } finally {
+        releaseUploadSlot();
     }
 });

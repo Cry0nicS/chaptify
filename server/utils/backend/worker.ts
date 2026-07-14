@@ -1,55 +1,150 @@
 import type {BackendConfig} from "./config";
 import type {JobRecord, JobRepository} from "./database";
-import {access, mkdir, rm} from "node:fs/promises";
+import {access, mkdir, rm, stat} from "node:fs/promises";
 import {basename, join} from "node:path";
-import {createChapterZip} from "./archive";
+import {createChapterZip as createChapterZipDefault} from "./archive";
 import {runCleanup} from "./cleanup";
 import {normalizeBaseUrl} from "./config";
 import {PublicJobError} from "./errors";
-import {createDownloadToken, hashDownloadToken} from "./ids";
+import {createSignedDownloadToken} from "./ids";
 import {createMailgunService} from "./mailgun";
-import {inspectAudioFile, splitChapters} from "./media";
+import {
+    inspectAudioFile as inspectAudioFileDefault,
+    splitChapters as splitChaptersDefault
+} from "./media";
 import {ensurePathInside, jobDirectory} from "./paths";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const safeDiagnostic = (error: unknown): string =>
+    error instanceof Error ? error.name || "Error" : "Unknown error";
+
+const cleanupProcessingArtifacts = async (
+    internalId: string,
+    chaptersDirectory: string | null,
+    outputDirectory: string | null,
+    removePath: typeof rm
+) => {
+    for (const directory of [chaptersDirectory, outputDirectory]) {
+        if (!directory) {
+            continue;
+        }
+
+        try {
+            await removePath(directory, {recursive: true, force: true});
+        } catch (error) {
+            console.warn("Processing artifact cleanup failed", {
+                jobId: internalId,
+                error: safeDiagnostic(error)
+            });
+        }
+    }
+};
+
+const cleanupReadyIntermediates = async (
+    internalId: string,
+    chaptersDirectory: string,
+    sourcePath: string,
+    removePath: typeof rm
+) => {
+    for (const cleanup of [
+        async () => {
+            await removePath(chaptersDirectory, {recursive: true, force: true});
+        },
+        async () => {
+            await removePath(sourcePath, {force: true});
+        }
+    ]) {
+        try {
+            await cleanup();
+        } catch (error) {
+            console.warn("Ready job intermediate cleanup failed", {
+                jobId: internalId,
+                error: safeDiagnostic(error)
+            });
+        }
+    }
+};
+
+export interface ProcessJobDependencies {
+    makeDirectory?: typeof mkdir;
+    removePath?: typeof rm;
+    statPath?: typeof stat;
+    inspectAudioFile?: typeof inspectAudioFileDefault;
+    splitChapters?: typeof splitChaptersDefault;
+    createChapterZip?: typeof createChapterZipDefault;
+    deliverReadyEmail?: typeof deliverReadyEmail;
+    beforeMarkReady?: () => Promise<void> | void;
+}
+
 export const deliverReadyEmail = async (
     config: BackendConfig,
     jobs: JobRepository,
-    job: JobRecord,
-    token: string
+    job: JobRecord
 ): Promise<void> => {
-    const mailgun = createMailgunService(config);
-    const downloadUrl = `${normalizeBaseUrl(config.appBaseUrl || "http://localhost:3000")}/api/download/${token}`;
-
-    while (job.email && job.emailAttempts < config.emailRetryAttempts) {
-        jobs.incrementEmailAttempt(job.internalId);
-
-        try {
-            await mailgun.sendCompletionEmail({
-                to: job.email,
-                downloadUrl,
-                expiresInHours: config.jobRetentionHours
-            });
-            jobs.markEmailSent(job.internalId, new Date().toISOString());
-            return;
-        } catch (error) {
-            console.warn("Completion email attempt failed", {
-                jobId: job.publicJobId,
-                attempt: job.emailAttempts + 1,
-                error: String(error)
-            });
-        }
-
-        const updatedJob = jobs.findByInternalId(job.internalId);
-        if (!updatedJob) {
-            break;
-        }
-
-        job = updatedJob;
+    if (!config.downloadSigningSecret) {
+        jobs.markEmailFailed(job.internalId, "missing_signing_secret");
+        return;
     }
 
-    jobs.markEmailFailed(job.internalId);
+    const mailgun = createMailgunService(config);
+    const token = createSignedDownloadToken({
+        publicJobId: job.publicJobId,
+        internalId: job.internalId,
+        expiresAt: job.expiresAt || "",
+        signingSecret: config.downloadSigningSecret
+    });
+    const downloadUrl = `${normalizeBaseUrl(config.appBaseUrl || "http://localhost:3000")}/api/download/${token}`;
+
+    if (!job.email || !job.expiresAt || job.emailAttempts >= config.emailRetryAttempts) {
+        jobs.markEmailFailed(job.internalId, "retry_limit_reached");
+        return;
+    }
+
+    if (new Date(job.expiresAt).getTime() <= Date.now()) {
+        jobs.markEmailFailed(job.internalId, "expired");
+        return;
+    }
+
+    try {
+        await mailgun.sendCompletionEmail({
+            to: job.email,
+            downloadUrl,
+            expiresInHours: config.jobRetentionHours
+        });
+        jobs.markEmailSent(job.internalId, new Date().toISOString());
+    } catch (error) {
+        const attempt = job.emailAttempts + 1;
+        const retryLimitReached = attempt >= config.emailRetryAttempts;
+        const baseDelayMs = config.emailRetryBaseDelaySeconds * 1000;
+        const maxDelayMs = config.emailRetryMaxDelaySeconds * 1000;
+        const exponentialDelay = Math.min(maxDelayMs, baseDelayMs * 2 ** Math.max(0, attempt - 1));
+        const jitter = Math.floor(Math.random() * Math.min(baseDelayMs, exponentialDelay));
+        const nextAttemptAt = retryLimitReached
+            ? null
+            : new Date(Date.now() + exponentialDelay + jitter).toISOString();
+        const safeFailure = String(error).slice(0, 160);
+
+        jobs.recordEmailAttempt(job.internalId, nextAttemptAt, safeFailure);
+        console.warn("Completion email attempt failed", {
+            jobId: job.publicJobId,
+            attempt,
+            error: safeFailure
+        });
+
+        if (retryLimitReached) {
+            jobs.markEmailFailed(job.internalId, "retry_limit_reached");
+        }
+    }
+};
+
+export const deliverDueEmails = async (config: BackendConfig, jobs: JobRepository) => {
+    const now = new Date().toISOString();
+    jobs.expirePendingEmails(now);
+
+    for (const job of jobs.listReadyEmailJobsDue(now, Math.max(1, config.workerConcurrency))) {
+        await deliverReadyEmail(config, jobs, job);
+    }
 };
 
 /**
@@ -62,17 +157,42 @@ export const deliverReadyEmail = async (
 export const processJob = async (
     config: BackendConfig,
     jobs: JobRepository,
-    job: JobRecord
+    job: JobRecord,
+    dependencies: ProcessJobDependencies = {}
 ): Promise<void> => {
+    const makeDirectory = dependencies.makeDirectory || mkdir;
+    const removePath = dependencies.removePath || rm;
+    const statPath = dependencies.statPath || stat;
+    const inspectAudioFile = dependencies.inspectAudioFile || inspectAudioFileDefault;
+    const splitChapters = dependencies.splitChapters || splitChaptersDefault;
+    const createChapterZip = dependencies.createChapterZip || createChapterZipDefault;
+    const deliverEmail = dependencies.deliverReadyEmail || deliverReadyEmail;
     const directory = jobDirectory(config.storageRoot, job.internalId);
-    const chaptersDirectory = ensurePathInside(config.storageRoot, join(directory, "chapters"));
-    const outputDirectory = ensurePathInside(config.storageRoot, join(directory, "output"));
-    await mkdir(chaptersDirectory, {recursive: true, mode: 0o700});
-    await mkdir(outputDirectory, {recursive: true, mode: 0o700});
+    let chaptersDirectory: string | null = null;
+    let outputDirectory: string | null = null;
+    let readyTransitionSucceeded = false;
+    const abortController = new AbortController();
+    const deadlineMs = Date.now() + config.jobProcessingTimeoutSeconds * 1000;
+    const deadlineTimer = setTimeout(() => {
+        abortController.abort();
+    }, config.jobProcessingTimeoutSeconds * 1000);
+    const mediaOptions = {
+        maxAudiobookDurationSeconds: config.maxAudiobookDurationSeconds,
+        maxChapters: config.maxChapters,
+        ffprobeTimeoutMs: config.ffprobeTimeoutSeconds * 1000,
+        ffmpegChapterTimeoutMs: config.ffmpegChapterTimeoutSeconds * 1000,
+        deadlineMs,
+        signal: abortController.signal
+    };
 
     try {
+        chaptersDirectory = ensurePathInside(config.storageRoot, join(directory, "chapters"));
+        outputDirectory = ensurePathInside(config.storageRoot, join(directory, "output"));
+        await makeDirectory(chaptersDirectory, {recursive: true, mode: 0o700});
+        await makeDirectory(outputDirectory, {recursive: true, mode: 0o700});
+
         jobs.updateProgress(job.internalId, 10);
-        const inspection = await inspectAudioFile(job.sourcePath, job.sourceFormat);
+        const inspection = await inspectAudioFile(job.sourcePath, job.sourceFormat, mediaOptions);
         jobs.updateProgress(job.internalId, 20, 0, inspection.chapters.length);
         const chapterPaths = await splitChapters(
             config.storageRoot,
@@ -82,7 +202,8 @@ export const processJob = async (
             (currentChapter, totalChapters) => {
                 const progress = 20 + Math.floor((currentChapter / totalChapters) * 55);
                 jobs.updateProgress(job.internalId, progress, currentChapter, totalChapters);
-            }
+            },
+            mediaOptions
         );
 
         jobs.updateProgress(job.internalId, 82);
@@ -91,39 +212,76 @@ export const processJob = async (
             config.storageRoot,
             outputDirectory,
             archiveName,
-            chapterPaths
+            chapterPaths,
+            {
+                signal: abortController.signal
+            }
         );
-        const token = createDownloadToken();
+        const zipStats = await statPath(zipPath);
+        if (zipStats.size === 0) {
+            throw new PublicJobError("ZIP_CREATION_FAILED", "ZIP archive was empty");
+        }
+        await dependencies.beforeMarkReady?.();
         const completedAt = new Date();
         const expiresAt = new Date(
             completedAt.getTime() + config.jobRetentionHours * 60 * 60 * 1000
         ).toISOString();
-        jobs.markReady(
+        const markedReady = jobs.markReady(
             job.internalId,
             zipPath,
-            hashDownloadToken(token),
+            null,
             completedAt.toISOString(),
             expiresAt
         );
-        await rm(chaptersDirectory, {recursive: true, force: true});
-        await rm(job.sourcePath, {force: true});
+        if (!markedReady) {
+            console.warn("Ready transition skipped for stale job state", {
+                jobId: job.publicJobId
+            });
+            return;
+        }
+        readyTransitionSucceeded = true;
+
+        await cleanupReadyIntermediates(
+            job.internalId,
+            chaptersDirectory,
+            job.sourcePath,
+            removePath
+        );
 
         const freshJob = jobs.findByInternalId(job.internalId);
-        if (freshJob?.email) {
-            await deliverReadyEmail(config, jobs, freshJob, token);
+        if (freshJob?.status === "ready" && freshJob.email) {
+            await deliverEmail(config, jobs, freshJob);
         }
     } catch (error) {
+        if (readyTransitionSucceeded) {
+            console.warn("Ready job post-processing step failed", {
+                jobId: job.publicJobId,
+                error: safeDiagnostic(error)
+            });
+            return;
+        }
+
         const publicError =
             error instanceof PublicJobError
                 ? error
                 : new PublicJobError("PROCESSING_FAILED", String(error));
-        jobs.markFailed(
+        const markedFailed = jobs.markFailed(
             job.internalId,
             publicError.code,
             publicError.message,
             new Date().toISOString()
         );
-        await rm(chaptersDirectory, {recursive: true, force: true});
+        await cleanupProcessingArtifacts(
+            job.internalId,
+            chaptersDirectory,
+            outputDirectory,
+            removePath
+        );
+        if (markedFailed) {
+            jobs.releaseStorageReservation(job.internalId, new Date().toISOString());
+        }
+    } finally {
+        clearTimeout(deadlineTimer);
     }
 };
 
@@ -146,17 +304,20 @@ export const recoverInterruptedJobs = async (config: BackendConfig, jobs: JobRep
             await rm(chaptersDirectory, {recursive: true, force: true});
             await rm(outputDirectory, {recursive: true, force: true});
         } catch (error) {
-            jobs.markFailed(
+            const markedFailed = jobs.markFailed(
                 job.internalId,
                 "PROCESSING_FAILED",
                 `Interrupted job could not be recovered: ${String(error)}`,
                 new Date().toISOString()
             );
+            if (markedFailed) {
+                jobs.releaseStorageReservation(job.internalId, new Date().toISOString());
+            }
         }
     }
 
     jobs.resetProcessingJobs();
-    await runCleanup(config.storageRoot, jobs);
+    await runCleanup(config, jobs);
 };
 
 /**
@@ -183,7 +344,8 @@ export const runWorkerLoop = async (config: BackendConfig, jobs: JobRepository) 
             break;
         }
 
-        await runCleanup(config.storageRoot, jobs);
+        await runCleanup(config, jobs);
+        await deliverDueEmails(config, jobs);
 
         while (activeJobs.size < config.workerConcurrency) {
             if (shuttingDown) {
@@ -195,9 +357,16 @@ export const runWorkerLoop = async (config: BackendConfig, jobs: JobRepository) 
                 break;
             }
 
-            const activeJob = processJob(config, jobs, job).finally(() => {
-                activeJobs.delete(activeJob);
-            });
+            const activeJob = processJob(config, jobs, job)
+                .catch((error) => {
+                    console.error("Worker job promise rejected", {
+                        jobId: job.publicJobId,
+                        error: safeDiagnostic(error)
+                    });
+                })
+                .finally(() => {
+                    activeJobs.delete(activeJob);
+                });
             activeJobs.add(activeJob);
         }
 
