@@ -83,11 +83,15 @@ const cleanupOrphanJobDirectories = async (
  */
 const normalizeCleanupConfig = (
     config: BackendConfig | string
-): Pick<BackendConfig, "storageRoot" | "orphanJobDirectoryMinAgeMinutes"> =>
+): Pick<
+    BackendConfig,
+    "storageRoot" | "orphanJobDirectoryMinAgeMinutes" | "browserDownloadGrantUsedGraceSeconds"
+> =>
     typeof config === "string"
         ? {
               storageRoot: config,
-              orphanJobDirectoryMinAgeMinutes: 30
+              orphanJobDirectoryMinAgeMinutes: 30,
+              browserDownloadGrantUsedGraceSeconds: 300
           }
         : config;
 
@@ -99,8 +103,12 @@ export const runCleanup = async (
     const {storageRoot} = cleanupConfig;
     const now = new Date().toISOString();
     const nowMs = Date.now();
+    const grantUsedBefore = new Date(
+        nowMs - cleanupConfig.browserDownloadGrantUsedGraceSeconds * 1000
+    ).toISOString();
     jobs.expirePendingEmails(now);
     jobs.releaseExpiredStorageReservations(now);
+    jobs.purgeBrowserDownloadGrants(now, grantUsedBefore);
     const expiredJobs = jobs.listExpiredReadyJobs(now);
 
     for (const job of expiredJobs) {
@@ -110,8 +118,10 @@ export const runCleanup = async (
             }
 
             await cleanupJobFiles(storageRoot, job.internalId);
-            jobs.releaseStorageReservation(job.internalId, now);
-            jobs.markExpired(job.internalId, now);
+            if (jobs.markExpired(job.internalId, now)) {
+                jobs.releaseStorageReservation(job.internalId, now);
+                jobs.purgeBrowserDownloadGrants(now, grantUsedBefore);
+            }
         } catch (error) {
             console.warn("Cleanup failed for an expired job", {
                 jobId: job.publicJobId,

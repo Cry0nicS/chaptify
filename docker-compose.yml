@@ -1,5 +1,5 @@
 services:
-    public-notice:
+    chaptify:
         image: chaptify:latest
         build: .
         command: [node, .output/start.mjs]
@@ -22,6 +22,8 @@ services:
     worker:
         image: chaptify:latest
         command: [node, .output/worker.mjs]
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
         env_file:
             - path: .env
               required: false
@@ -31,7 +33,7 @@ services:
             - chaptify-storage:/data/chaptify
         restart: unless-stopped
         depends_on:
-            - public-notice
+            - chaptify
 
     cleanup:
         image: chaptify:latest
@@ -46,7 +48,7 @@ services:
             - chaptify-storage:/data/chaptify
         restart: unless-stopped
         depends_on:
-            - public-notice
+            - chaptify
 
 volumes:
     chaptify-storage:

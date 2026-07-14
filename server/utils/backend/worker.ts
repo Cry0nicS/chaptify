@@ -1,17 +1,81 @@
 import type {BackendConfig} from "./config";
 import type {JobRecord, JobRepository} from "./database";
-import {access, mkdir, rm} from "node:fs/promises";
+import {access, mkdir, rm, stat} from "node:fs/promises";
 import {basename, join} from "node:path";
-import {createChapterZip} from "./archive";
+import {createChapterZip as createChapterZipDefault} from "./archive";
 import {runCleanup} from "./cleanup";
 import {normalizeBaseUrl} from "./config";
 import {PublicJobError} from "./errors";
 import {createSignedDownloadToken} from "./ids";
 import {createMailgunService} from "./mailgun";
-import {inspectAudioFile, splitChapters} from "./media";
+import {
+    inspectAudioFile as inspectAudioFileDefault,
+    splitChapters as splitChaptersDefault
+} from "./media";
 import {ensurePathInside, jobDirectory} from "./paths";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const safeDiagnostic = (error: unknown): string =>
+    error instanceof Error ? error.name || "Error" : "Unknown error";
+
+const cleanupProcessingArtifacts = async (
+    internalId: string,
+    chaptersDirectory: string | null,
+    outputDirectory: string | null,
+    removePath: typeof rm
+) => {
+    for (const directory of [chaptersDirectory, outputDirectory]) {
+        if (!directory) {
+            continue;
+        }
+
+        try {
+            await removePath(directory, {recursive: true, force: true});
+        } catch (error) {
+            console.warn("Processing artifact cleanup failed", {
+                jobId: internalId,
+                error: safeDiagnostic(error)
+            });
+        }
+    }
+};
+
+const cleanupReadyIntermediates = async (
+    internalId: string,
+    chaptersDirectory: string,
+    sourcePath: string,
+    removePath: typeof rm
+) => {
+    for (const cleanup of [
+        async () => {
+            await removePath(chaptersDirectory, {recursive: true, force: true});
+        },
+        async () => {
+            await removePath(sourcePath, {force: true});
+        }
+    ]) {
+        try {
+            await cleanup();
+        } catch (error) {
+            console.warn("Ready job intermediate cleanup failed", {
+                jobId: internalId,
+                error: safeDiagnostic(error)
+            });
+        }
+    }
+};
+
+export interface ProcessJobDependencies {
+    makeDirectory?: typeof mkdir;
+    removePath?: typeof rm;
+    statPath?: typeof stat;
+    inspectAudioFile?: typeof inspectAudioFileDefault;
+    splitChapters?: typeof splitChaptersDefault;
+    createChapterZip?: typeof createChapterZipDefault;
+    deliverReadyEmail?: typeof deliverReadyEmail;
+    beforeMarkReady?: () => Promise<void> | void;
+}
 
 export const deliverReadyEmail = async (
     config: BackendConfig,
@@ -93,13 +157,20 @@ export const deliverDueEmails = async (config: BackendConfig, jobs: JobRepositor
 export const processJob = async (
     config: BackendConfig,
     jobs: JobRepository,
-    job: JobRecord
+    job: JobRecord,
+    dependencies: ProcessJobDependencies = {}
 ): Promise<void> => {
+    const makeDirectory = dependencies.makeDirectory || mkdir;
+    const removePath = dependencies.removePath || rm;
+    const statPath = dependencies.statPath || stat;
+    const inspectAudioFile = dependencies.inspectAudioFile || inspectAudioFileDefault;
+    const splitChapters = dependencies.splitChapters || splitChaptersDefault;
+    const createChapterZip = dependencies.createChapterZip || createChapterZipDefault;
+    const deliverEmail = dependencies.deliverReadyEmail || deliverReadyEmail;
     const directory = jobDirectory(config.storageRoot, job.internalId);
-    const chaptersDirectory = ensurePathInside(config.storageRoot, join(directory, "chapters"));
-    const outputDirectory = ensurePathInside(config.storageRoot, join(directory, "output"));
-    await mkdir(chaptersDirectory, {recursive: true, mode: 0o700});
-    await mkdir(outputDirectory, {recursive: true, mode: 0o700});
+    let chaptersDirectory: string | null = null;
+    let outputDirectory: string | null = null;
+    let readyTransitionSucceeded = false;
     const abortController = new AbortController();
     const deadlineMs = Date.now() + config.jobProcessingTimeoutSeconds * 1000;
     const deadlineTimer = setTimeout(() => {
@@ -115,6 +186,11 @@ export const processJob = async (
     };
 
     try {
+        chaptersDirectory = ensurePathInside(config.storageRoot, join(directory, "chapters"));
+        outputDirectory = ensurePathInside(config.storageRoot, join(directory, "output"));
+        await makeDirectory(chaptersDirectory, {recursive: true, mode: 0o700});
+        await makeDirectory(outputDirectory, {recursive: true, mode: 0o700});
+
         jobs.updateProgress(job.internalId, 10);
         const inspection = await inspectAudioFile(job.sourcePath, job.sourceFormat, mediaOptions);
         jobs.updateProgress(job.internalId, 20, 0, inspection.chapters.length);
@@ -136,34 +212,74 @@ export const processJob = async (
             config.storageRoot,
             outputDirectory,
             archiveName,
-            chapterPaths
+            chapterPaths,
+            {
+                signal: abortController.signal
+            }
         );
+        const zipStats = await statPath(zipPath);
+        if (zipStats.size === 0) {
+            throw new PublicJobError("ZIP_CREATION_FAILED", "ZIP archive was empty");
+        }
+        await dependencies.beforeMarkReady?.();
         const completedAt = new Date();
         const expiresAt = new Date(
             completedAt.getTime() + config.jobRetentionHours * 60 * 60 * 1000
         ).toISOString();
-        jobs.markReady(job.internalId, zipPath, null, completedAt.toISOString(), expiresAt);
-        await rm(chaptersDirectory, {recursive: true, force: true});
-        await rm(job.sourcePath, {force: true});
+        const markedReady = jobs.markReady(
+            job.internalId,
+            zipPath,
+            null,
+            completedAt.toISOString(),
+            expiresAt
+        );
+        if (!markedReady) {
+            console.warn("Ready transition skipped for stale job state", {
+                jobId: job.publicJobId
+            });
+            return;
+        }
+        readyTransitionSucceeded = true;
+
+        await cleanupReadyIntermediates(
+            job.internalId,
+            chaptersDirectory,
+            job.sourcePath,
+            removePath
+        );
 
         const freshJob = jobs.findByInternalId(job.internalId);
-        if (freshJob?.email) {
-            await deliverReadyEmail(config, jobs, freshJob);
+        if (freshJob?.status === "ready" && freshJob.email) {
+            await deliverEmail(config, jobs, freshJob);
         }
     } catch (error) {
+        if (readyTransitionSucceeded) {
+            console.warn("Ready job post-processing step failed", {
+                jobId: job.publicJobId,
+                error: safeDiagnostic(error)
+            });
+            return;
+        }
+
         const publicError =
             error instanceof PublicJobError
                 ? error
                 : new PublicJobError("PROCESSING_FAILED", String(error));
-        jobs.markFailed(
+        const markedFailed = jobs.markFailed(
             job.internalId,
             publicError.code,
             publicError.message,
             new Date().toISOString()
         );
-        await rm(chaptersDirectory, {recursive: true, force: true});
-        await rm(outputDirectory, {recursive: true, force: true});
-        jobs.releaseStorageReservation(job.internalId, new Date().toISOString());
+        await cleanupProcessingArtifacts(
+            job.internalId,
+            chaptersDirectory,
+            outputDirectory,
+            removePath
+        );
+        if (markedFailed) {
+            jobs.releaseStorageReservation(job.internalId, new Date().toISOString());
+        }
     } finally {
         clearTimeout(deadlineTimer);
     }
@@ -188,12 +304,15 @@ export const recoverInterruptedJobs = async (config: BackendConfig, jobs: JobRep
             await rm(chaptersDirectory, {recursive: true, force: true});
             await rm(outputDirectory, {recursive: true, force: true});
         } catch (error) {
-            jobs.markFailed(
+            const markedFailed = jobs.markFailed(
                 job.internalId,
                 "PROCESSING_FAILED",
                 `Interrupted job could not be recovered: ${String(error)}`,
                 new Date().toISOString()
             );
+            if (markedFailed) {
+                jobs.releaseStorageReservation(job.internalId, new Date().toISOString());
+            }
         }
     }
 
@@ -238,9 +357,16 @@ export const runWorkerLoop = async (config: BackendConfig, jobs: JobRepository) 
                 break;
             }
 
-            const activeJob = processJob(config, jobs, job).finally(() => {
-                activeJobs.delete(activeJob);
-            });
+            const activeJob = processJob(config, jobs, job)
+                .catch((error) => {
+                    console.error("Worker job promise rejected", {
+                        jobId: job.publicJobId,
+                        error: safeDiagnostic(error)
+                    });
+                })
+                .finally(() => {
+                    activeJobs.delete(activeJob);
+                });
             activeJobs.add(activeJob);
         }
 

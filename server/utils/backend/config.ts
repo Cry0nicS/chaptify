@@ -31,6 +31,7 @@ const runtimeConfigSchema = z.object({
     orphanJobDirectoryMinAgeMinutes: numericEnvSchema(30, 1),
     cleanupIntervalSeconds: numericEnvSchema(300, 1),
     browserDownloadGrantLifetimeSeconds: numericEnvSchema(60, 1),
+    browserDownloadGrantUsedGraceSeconds: numericEnvSchema(300, 1),
     workerConcurrency: numericEnvSchema(1, 1),
     jobRetentionHours: numericEnvSchema(12, 1),
     maxAudiobookDurationSeconds: numericEnvSchema(86_400, 1),
@@ -78,6 +79,8 @@ export const getBackendConfigFromEnv = (): BackendConfig =>
         cleanupIntervalSeconds: process.env.NUXT_CLEANUP_INTERVAL_SECONDS,
         browserDownloadGrantLifetimeSeconds:
             process.env.NUXT_BROWSER_DOWNLOAD_GRANT_LIFETIME_SECONDS,
+        browserDownloadGrantUsedGraceSeconds:
+            process.env.NUXT_BROWSER_DOWNLOAD_GRANT_USED_GRACE_SECONDS,
         workerConcurrency: process.env.NUXT_WORKER_CONCURRENCY,
         jobRetentionHours: process.env.NUXT_JOB_RETENTION_HOURS,
         maxAudiobookDurationSeconds: process.env.NUXT_MAX_AUDIOBOOK_DURATION_SECONDS,
@@ -136,6 +139,9 @@ export const getBackendConfig = (): BackendConfig => {
         browserDownloadGrantLifetimeSeconds:
             values.browserDownloadGrantLifetimeSeconds ||
             process.env.NUXT_BROWSER_DOWNLOAD_GRANT_LIFETIME_SECONDS,
+        browserDownloadGrantUsedGraceSeconds:
+            values.browserDownloadGrantUsedGraceSeconds ||
+            process.env.NUXT_BROWSER_DOWNLOAD_GRANT_USED_GRACE_SECONDS,
         workerConcurrency: values.workerConcurrency || process.env.NUXT_WORKER_CONCURRENCY,
         jobRetentionHours: values.jobRetentionHours || process.env.NUXT_JOB_RETENTION_HOURS,
         maxAudiobookDurationSeconds:

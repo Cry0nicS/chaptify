@@ -223,6 +223,8 @@ export const openDatabase = (storageRoot: string): Database.Database => {
             ON browser_download_grants(token_hash, expires_at, used_at);
         CREATE INDEX IF NOT EXISTS idx_browser_download_grants_job
             ON browser_download_grants(public_job_id, internal_id);
+        CREATE INDEX IF NOT EXISTS idx_browser_download_grants_retention
+            ON browser_download_grants(expires_at, used_at, internal_id);
     `);
     sharedDatabase = database;
 
@@ -324,8 +326,8 @@ export const createJobRepository = (database: Database.Database) => {
                 .run(nextOwnerId, previousOwnerId);
         },
 
-        releaseStorageReservation(ownerId: string, now: string) {
-            database
+        releaseStorageReservation(ownerId: string, now: string): boolean {
+            const result = database
                 .prepare(
                     `
                     UPDATE storage_reservations
@@ -334,6 +336,8 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(now, ownerId);
+
+            return result.changes === 1;
         },
 
         releaseExpiredStorageReservations(now: string) {
@@ -582,9 +586,13 @@ export const createJobRepository = (database: Database.Database) => {
                     return null;
                 }
 
-                database
+                const result = database
                     .prepare("UPDATE browser_download_grants SET used_at = ? WHERE id = ?")
                     .run(now, row.id);
+
+                if (result.changes !== 1) {
+                    return null;
+                }
 
                 return job;
             });
@@ -677,9 +685,9 @@ export const createJobRepository = (database: Database.Database) => {
             publicErrorCode: PublicProcessingErrorCode,
             internalError: string,
             now: string
-        ) {
+        ): boolean {
             const publicError = serializePublicError(publicErrorCode);
-            database
+            const result = database
                 .prepare(
                     `
                     UPDATE jobs
@@ -693,6 +701,8 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(publicErrorCode, publicError?.message || null, internalError, now, internalId);
+
+            return result.changes === 1;
         },
 
         /**
@@ -708,8 +718,8 @@ export const createJobRepository = (database: Database.Database) => {
             tokenHash: string | null,
             completedAt: string,
             expiresAt: string
-        ) {
-            database
+        ): boolean {
+            const result = database
                 .prepare(
                     `
                     UPDATE jobs
@@ -726,6 +736,8 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(completedAt, expiresAt, zipPath, tokenHash, completedAt, internalId);
+
+            return result.changes === 1;
         },
 
         recordEmailAttempt(
@@ -873,8 +885,8 @@ export const createJobRepository = (database: Database.Database) => {
          * Clearing both token hashes invalidates emailed links and browser-session downloads while
          * preserving the public job record for status display.
          */
-        markExpired(internalId: string, now: string) {
-            database
+        markExpired(internalId: string, now: string): boolean {
+            const result = database
                 .prepare(
                     `
                     UPDATE jobs
@@ -897,6 +909,27 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(now, internalId);
+
+            return result.changes === 1;
+        },
+
+        purgeBrowserDownloadGrants(now: string, usedBefore: string): number {
+            const result = database
+                .prepare(
+                    `
+                    DELETE FROM browser_download_grants
+                    WHERE expires_at <= ?
+                        OR (used_at IS NOT NULL AND used_at <= ?)
+                        OR internal_id IN (
+                            SELECT internal_id
+                            FROM jobs
+                            WHERE status = 'expired'
+                        )
+                `
+                )
+                .run(now, usedBefore);
+
+            return result.changes;
         },
 
         listFailedJobsWithFiles(): JobRecord[] {

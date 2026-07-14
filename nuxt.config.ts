@@ -30,6 +30,7 @@ export default defineNuxtConfig({
         orphanJobDirectoryMinAgeMinutes: "30",
         cleanupIntervalSeconds: "300",
         browserDownloadGrantLifetimeSeconds: "60",
+        browserDownloadGrantUsedGraceSeconds: "300",
         workerConcurrency: "1",
         jobRetentionHours: "12",
         maxAudiobookDurationSeconds: "108000",
