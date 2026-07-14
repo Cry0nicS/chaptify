@@ -29,6 +29,12 @@ services:
               required: false
         environment:
             NUXT_STORAGE_ROOT: /data/chaptify
+            NUXT_MAILGUN_BASE_URL: ${NUXT_MAILGUN_BASE_URL:-}
+            NUXT_MAILGUN_DOMAIN: ${NUXT_MAILGUN_DOMAIN:-}
+            NUXT_MAILGUN_KEY: ${NUXT_MAILGUN_KEY:-}
+            NUXT_MAILGUN_SENDER: ${NUXT_MAILGUN_SENDER:-}
+            NUXT_MAILGUN_RECIPIENT: ${NUXT_MAILGUN_RECIPIENT:-}
+            NUXT_MAILGUN_BCC: ${NUXT_MAILGUN_BCC:-}
         volumes:
             - chaptify-storage:/data/chaptify
         restart: unless-stopped
