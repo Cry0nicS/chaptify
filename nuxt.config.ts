@@ -9,6 +9,16 @@ export default defineNuxtConfig({
 
     modules: ["@nuxt/eslint", "@nuxt/ui", "@nuxtjs/device"],
 
+    // The server runs on Node 22 only; raise the Nitro esbuild target above es2019 so modern
+    // syntax such as BigInt literals (used in IPv6 CIDR matching) is supported without warnings.
+    nitro: {
+        esbuild: {
+            options: {
+                target: "es2022"
+            }
+        }
+    },
+
     devtools: {
         enabled: true
     },
