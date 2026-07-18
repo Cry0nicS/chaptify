@@ -2,6 +2,9 @@
     "name": "chaptify",
     "private": true,
     "type": "module",
+    "engines": {
+        "node": ">=22 <23"
+    },
     "scripts": {
         "api:start": "node .output/start.mjs",
         "build": "nuxt build && npm run worker:build && npm run cleanup:build && npm run start:build",
@@ -61,23 +64,5 @@
     "lint-staged": {
         "*.{html,js,json,css,ts,vue}": "prettier --check",
         "*.{js,ts,vue}": "eslint"
-    },
-    "optionalDependencies": {
-        "@oxc-minify/binding-linux-x64-gnu": "^0.133.0",
-        "@oxc-minify/binding-linux-x64-musl": "^0.133.0",
-        "@oxc-parser/binding-linux-x64-gnu": "^0.133.0",
-        "@oxc-parser/binding-linux-x64-musl": "^0.133.0",
-        "@oxc-transform/binding-linux-x64-gnu": "^0.133.0",
-        "@oxc-transform/binding-linux-x64-musl": "^0.133.0",
-        "@rolldown/binding-linux-x64-gnu": "^1.1.5",
-        "@rolldown/binding-linux-x64-musl": "^1.1.5",
-        "@rollup/rollup-linux-x64-gnu": "^4.62.2",
-        "@rollup/rollup-linux-x64-musl": "^4.62.2",
-        "@tailwindcss/oxide-linux-x64-gnu": "^4.3.2",
-        "@tailwindcss/oxide-linux-x64-musl": "^4.3.2",
-        "@unrs/resolver-binding-linux-x64-gnu": "^1.12.2",
-        "@unrs/resolver-binding-linux-x64-musl": "^1.12.2",
-        "lightningcss-linux-x64-gnu": "^1.32.0",
-        "lightningcss-linux-x64-musl": "^1.32.0"
     }
 }
