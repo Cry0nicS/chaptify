@@ -796,9 +796,14 @@ export const createJobRepository = (database: Database.Database) => {
          *
          * Processing readiness is independent of Mailgun delivery. Once delivery succeeds, the
          * address is no longer needed for retries and is removed from persistence.
+         *
+         * The update is conditional: it only applies while the job is still ready, unexpired,
+         * email-pending, and owns the given lease. If cleanup expired or anonymized the job during
+         * the Mailgun request, no row matches and `false` is returned so the caller does not report a
+         * delivery that points at an already-invalidated link.
          */
-        markEmailSent(internalId: string, now: string) {
-            database
+        markEmailSent(internalId: string, now: string, leaseUntil: string): boolean {
+            const result = database
                 .prepare(
                     `
                     UPDATE jobs
@@ -809,9 +814,16 @@ export const createJobRepository = (database: Database.Database) => {
                         email_last_error = NULL,
                         email_message_id = COALESCE(?, email_message_id)
                     WHERE internal_id = ?
+                        AND status = 'ready'
+                        AND email_status = 'pending'
+                        AND expires_at IS NOT NULL
+                        AND expires_at > ?
+                        AND email_next_attempt_at = ?
                 `
                 )
-                .run(now, null, internalId);
+                .run(now, null, internalId, now, leaseUntil);
+
+            return result.changes === 1;
         },
 
         markEmailFailed(internalId: string, safeFailure: string | null = null) {

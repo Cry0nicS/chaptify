@@ -22,6 +22,13 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 const EMAIL_SEND_LEASE_MS = 5 * 60_000;
 
+/**
+ * Minimum retention remaining before a completion email may be sent. Larger than the Mailgun
+ * request timeout so a link cannot be invalidated mid-send and so cleanup cannot expire the job
+ * while the send is in flight.
+ */
+const EMAIL_MIN_REMAINING_MS = 30_000;
+
 const safeDiagnostic = (error: unknown): string =>
     error instanceof Error ? error.name || "Error" : "Unknown error";
 
@@ -112,8 +119,11 @@ export const deliverReadyEmail = async (
         return;
     }
 
-    if (new Date(job.expiresAt).getTime() <= Date.now()) {
-        jobs.markEmailFailed(job.internalId, "expired");
+    // Do not start a send when the job is at or near expiry: the link could be invalidated during
+    // the Mailgun request. Requiring EMAIL_MIN_REMAINING_MS (> the Mailgun timeout) of remaining
+    // life also guarantees cleanup cannot expire the job while this send is in flight.
+    if (new Date(job.expiresAt).getTime() <= Date.now() + EMAIL_MIN_REMAINING_MS) {
+        jobs.markEmailFailed(job.internalId, "expiring_soon");
         return;
     }
 
@@ -130,7 +140,14 @@ export const deliverReadyEmail = async (
             downloadUrl,
             expiresInHours: config.jobRetentionHours
         });
-        jobs.markEmailSent(job.internalId, new Date().toISOString());
+        // Only record success if the job is still ready, unexpired, email-pending, and owns this
+        // lease. If cleanup expired/anonymized it during the send, do not claim a valid delivery.
+        const marked = jobs.markEmailSent(job.internalId, new Date().toISOString(), leaseUntil);
+        if (!marked) {
+            console.warn("Completion email sent but job state changed before it was recorded", {
+                jobId: job.publicJobId
+            });
+        }
     } catch (error) {
         const attempt = job.emailAttempts + 1;
         const retryLimitReached = attempt >= config.emailRetryAttempts;
