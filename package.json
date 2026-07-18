@@ -17,6 +17,7 @@
         "format-check": "prettier --check \"**/*.{html,js,json,jsx,css,ts,tsx,vue,scss}\"",
         "generate": "nuxt generate",
         "lint": "eslint .",
+        "lockfile:refresh": "docker run --rm --platform=linux/amd64 -u \"$(id -u):$(id -g)\" -e HOME=/tmp -v \"$PWD\":/w -w /w node:22 npm install --package-lock-only --ignore-scripts --no-audit --no-fund",
         "preview": "node .output/start.mjs",
         "postinstall": "nuxt prepare",
         "smoke:docker": "node scripts/docker-smoke.mjs",

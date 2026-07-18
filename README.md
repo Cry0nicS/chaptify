@@ -118,6 +118,16 @@ Start in these files for common changes:
 
 ## How to update dependencies
 
+> **Use Node 22 and regenerate the lockfile on Linux.** This project targets Node 22 (see `.nvmrc`
+> and `package.json` `engines`); run `nvm use` before installing. Native build tooling (rollup, oxc,
+> rolldown, tailwind-oxide, unrs-resolver, lightningcss) ships per-platform binaries, and npm on
+> macOS omits some Linux-only optional deps (e.g. `@emnapi/*`, `cac`) from `package-lock.json`, which
+> makes `npm ci` fail on the Linux CI runner and in the Docker build. After changing any dependency,
+> regenerate the lockfile with **`npm run lockfile:refresh`** — it uses Docker to resolve on
+> `linux/amd64` + `node:22` (matching CI, regardless of your machine's OS/arch) and updates
+> `package-lock.json` only, leaving your local `node_modules` untouched. Commit the result. For your
+> own `node_modules`, a normal `npm install` is fine — just don't commit a macOS-generated lockfile.
+
 ### Minor version updates
 
 Update packages to the latest safe version as follows:
