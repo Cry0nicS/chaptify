@@ -23,7 +23,9 @@ const runtimeConfigSchema = z.object({
     maxQueuedJobs: numericEnvSchema(10, 1),
     maxConcurrentUploads: numericEnvSchema(2, 1),
     uploadIdleTimeoutSeconds: numericEnvSchema(30, 1),
-    trustProxy: z.string().optional().default(""),
+    // Coerce because Nuxt parses runtimeConfig env overrides with destr, so `NUXT_TRUST_PROXY=false`
+    // (or `true`/`1`) arrives as a boolean/number; the trust policy is interpreted as a string.
+    trustProxy: z.coerce.string().optional().default(""),
     perIpUploadLimit: numericEnvSchema(5, 1),
     perIpJobLimit: numericEnvSchema(5, 1),
     downloadRateLimit: numericEnvSchema(30, 1),
