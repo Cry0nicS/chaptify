@@ -31,13 +31,13 @@
     "dependencies": {
         "@iconify-json/lucide": "^1.2.116",
         "@iconify-json/simple-icons": "^1.2.89",
-        "@nuxt/ui": "^4.9.0",
+        "@nuxt/ui": "~4.9.0",
         "@nuxtjs/device": "^4.0.0",
         "archiver": "^8.0.0",
         "better-sqlite3": "^12.11.1",
         "formidable": "^3.5.4",
         "mailgun.js": "^13.3.0",
-        "nuxt": "^4.4.8",
+        "nuxt": "~4.4.8",
         "tailwindcss": "^4.3.2",
         "zod": "^4.4.3"
     },
