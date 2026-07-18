@@ -22,6 +22,8 @@ const runtimeConfigSchema = z.object({
     maxUploadBytes: numericEnvSchema(1_073_741_824, 1),
     maxQueuedJobs: numericEnvSchema(10, 1),
     maxConcurrentUploads: numericEnvSchema(2, 1),
+    uploadIdleTimeoutSeconds: numericEnvSchema(30, 1),
+    trustProxy: z.string().optional().default(""),
     perIpUploadLimit: numericEnvSchema(5, 1),
     perIpJobLimit: numericEnvSchema(5, 1),
     downloadRateLimit: numericEnvSchema(30, 1),
@@ -69,6 +71,8 @@ export const getBackendConfigFromEnv = (): BackendConfig =>
         maxUploadBytes: process.env.NUXT_MAX_UPLOAD_BYTES,
         maxQueuedJobs: process.env.NUXT_MAX_QUEUED_JOBS,
         maxConcurrentUploads: process.env.NUXT_MAX_CONCURRENT_UPLOADS,
+        uploadIdleTimeoutSeconds: process.env.NUXT_UPLOAD_IDLE_TIMEOUT_SECONDS,
+        trustProxy: process.env.NUXT_TRUST_PROXY || "",
         perIpUploadLimit: process.env.NUXT_PER_IP_UPLOAD_LIMIT,
         perIpJobLimit: process.env.NUXT_PER_IP_JOB_LIMIT,
         downloadRateLimit: process.env.NUXT_DOWNLOAD_RATE_LIMIT,
@@ -121,6 +125,9 @@ export const getBackendConfig = (): BackendConfig => {
         maxQueuedJobs: values.maxQueuedJobs || process.env.NUXT_MAX_QUEUED_JOBS,
         maxConcurrentUploads:
             values.maxConcurrentUploads || process.env.NUXT_MAX_CONCURRENT_UPLOADS,
+        uploadIdleTimeoutSeconds:
+            values.uploadIdleTimeoutSeconds || process.env.NUXT_UPLOAD_IDLE_TIMEOUT_SECONDS,
+        trustProxy: values.trustProxy || process.env.NUXT_TRUST_PROXY || "",
         perIpUploadLimit: values.perIpUploadLimit || process.env.NUXT_PER_IP_UPLOAD_LIMIT,
         perIpJobLimit: values.perIpJobLimit || process.env.NUXT_PER_IP_JOB_LIMIT,
         downloadRateLimit: values.downloadRateLimit || process.env.NUXT_DOWNLOAD_RATE_LIMIT,
@@ -170,6 +177,52 @@ export const getBackendConfig = (): BackendConfig => {
 };
 
 export const normalizeBaseUrl = (baseUrl: string): string => baseUrl.replace(/\/+$/, "");
+
+/**
+ * Fails fast when a production process is missing configuration its core features require.
+ *
+ * Outside production this is a no-op so local development keeps working with lenient defaults. In
+ * production a missing signing secret, incomplete Mailgun configuration, or a localhost app origin
+ * silently breaks emailed download links while the service still reports healthy, so these are
+ * surfaced at startup instead of after a user never receives a working link.
+ */
+export const validateProductionConfig = (config: BackendConfig): void => {
+    if (process.env.NODE_ENV !== "production") {
+        return;
+    }
+
+    const problems: string[] = [];
+
+    if (!config.downloadSigningSecret || config.downloadSigningSecret.length < 32) {
+        problems.push("NUXT_DOWNLOAD_SIGNING_SECRET must be set to at least 32 characters");
+    }
+
+    if (!config.mailgunKey) {
+        problems.push("NUXT_MAILGUN_KEY is required");
+    }
+
+    if (!config.mailgunDomain) {
+        problems.push("NUXT_MAILGUN_DOMAIN is required");
+    }
+
+    if (!config.mailgunSender) {
+        problems.push("NUXT_MAILGUN_SENDER is required");
+    }
+
+    if (!config.mailgunBaseUrl) {
+        problems.push("NUXT_MAILGUN_BASE_URL is required");
+    }
+
+    if (!config.appBaseUrl || /localhost|127\.0\.0\.1|::1/i.test(config.appBaseUrl)) {
+        problems.push(
+            "NUXT_APP_BASE_URL must be set to the public application origin (not localhost)"
+        );
+    }
+
+    if (problems.length > 0) {
+        throw new Error(`Invalid production configuration:\n - ${problems.join("\n - ")}`);
+    }
+};
 
 /**
  * Creates the shared storage directories required by both API and worker processes.

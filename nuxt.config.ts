@@ -21,6 +21,8 @@ export default defineNuxtConfig({
         maxUploadBytes: "1610612736",
         maxQueuedJobs: "10",
         maxConcurrentUploads: "2",
+        uploadIdleTimeoutSeconds: "30",
+        trustProxy: "",
         perIpUploadLimit: "5",
         perIpJobLimit: "5",
         downloadRateLimit: "30",

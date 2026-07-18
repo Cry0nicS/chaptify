@@ -1,7 +1,11 @@
 import {writeFile} from "node:fs/promises";
 import {join} from "node:path";
 import {runCleanup} from "./utils/backend/cleanup";
-import {ensureStorageRoot, getBackendConfigFromEnv} from "./utils/backend/config";
+import {
+    ensureStorageRoot,
+    getBackendConfigFromEnv,
+    validateProductionConfig
+} from "./utils/backend/config";
 import {createJobRepository, openDatabase} from "./utils/backend/database";
 import {loadDotenv} from "./utils/backend/env";
 
@@ -33,6 +37,7 @@ const createInterruptibleSleep = () => {
 
 const main = async () => {
     const config = getBackendConfigFromEnv();
+    validateProductionConfig(config);
     await ensureStorageRoot(config.storageRoot);
     const database = openDatabase(config.storageRoot);
     const jobs = createJobRepository(database);

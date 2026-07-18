@@ -43,6 +43,7 @@ const parseMultipartUpload = async (
     event: H3Event,
     storageRoot: string,
     maxUploadBytes: number,
+    uploadIdleTimeoutMs: number,
     onFileBegin: (path: string) => void
 ) => {
     const uploadDirectory = ensurePathInside(storageRoot, join(storageRoot, "uploads"));
@@ -68,22 +69,66 @@ const parseMultipartUpload = async (
         }
     });
 
+    const request = event.node.req;
+
     return await new Promise<{
         fields: formidable.Fields;
         files: formidable.Files;
     }>((resolve, reject) => {
+        let settled = false;
+
+        function onClose() {
+            // Release the slot immediately if the client disconnects before the body finishes,
+            // rather than waiting for a server-level request timeout.
+            if (!request.complete) {
+                finish(new Error("Upload connection closed before completion"));
+            }
+        }
+
+        function finish(
+            error: unknown,
+            result?: {fields: formidable.Fields; files: formidable.Files}
+        ) {
+            if (settled) {
+                return;
+            }
+
+            settled = true;
+            request.setTimeout(0);
+            request.off("close", onClose);
+
+            if (error || !result) {
+                reject(error instanceof Error ? error : new Error(String(error)));
+                return;
+            }
+
+            resolve(result);
+        }
+
+        // Abort a stalled upload so a slow client cannot hold a scarce concurrent-upload slot. The
+        // socket timeout resets on every received chunk, so it only fires on genuine inactivity and
+        // never penalizes a large but steadily-transferring upload.
+        if (uploadIdleTimeoutMs > 0) {
+            request.setTimeout(uploadIdleTimeoutMs, () => {
+                request.destroy(new Error("Upload idle timeout exceeded"));
+            });
+        }
+
+        request.on("close", onClose);
+
         form.on("fileBegin", (_name, file) => {
             if (file.filepath) {
                 onFileBegin(file.filepath);
             }
         });
-        form.parse(event.node.req, (error, fields, files) => {
+
+        form.parse(request, (error, fields, files) => {
             if (error) {
-                reject(error);
+                finish(error);
                 return;
             }
 
-            resolve({fields, files});
+            finish(null, {fields, files});
         });
     });
 };
@@ -110,7 +155,7 @@ const estimateUploadReservationBytes = (event: H3Event, maxUploadBytes: number):
  */
 export default defineEventHandler(async (event) => {
     const {config, jobs} = await createBackendContext();
-    const clientIp = getClientIp(event);
+    const clientIp = getClientIp(event, config.trustProxy);
 
     if (jobs.countQueuedJobs() >= config.maxQueuedJobs) {
         throw createError({
@@ -207,6 +252,7 @@ export default defineEventHandler(async (event) => {
             event,
             config.storageRoot,
             config.maxUploadBytes,
+            config.uploadIdleTimeoutSeconds * 1000,
             (path) => {
                 tempPaths.push(path);
             }

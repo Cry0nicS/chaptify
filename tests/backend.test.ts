@@ -3,10 +3,14 @@ import {spawn} from "node:child_process";
 import {access, mkdir, mkdtemp, readFile, rm, stat, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {afterEach, describe, expect, it, vi} from "vitest";
+import {afterAll, afterEach, beforeAll, describe, expect, it, vi} from "vitest";
 import {createChapterZip} from "../server/utils/backend/archive";
 import {runCleanup} from "../server/utils/backend/cleanup";
-import {ensureStorageRoot, getBackendConfigFromEnv} from "../server/utils/backend/config";
+import {
+    ensureStorageRoot,
+    getBackendConfigFromEnv,
+    validateProductionConfig
+} from "../server/utils/backend/config";
 import {
     createJobRepository,
     openDatabase,
@@ -33,6 +37,11 @@ import {
     sanitizeDisplayFilename
 } from "../server/utils/backend/paths";
 import {runProcess} from "../server/utils/backend/process";
+import {
+    checkUploadRateLimit,
+    getClientIp,
+    resetRateLimitsForTests
+} from "../server/utils/backend/rate-limits";
 import {
     deliverDueEmails,
     deliverReadyEmail,
@@ -73,6 +82,8 @@ const makeConfig = (storageRoot: string): BackendConfig => ({
     maxUploadBytes: 1024,
     maxQueuedJobs: 10,
     maxConcurrentUploads: 2,
+    uploadIdleTimeoutSeconds: 30,
+    trustProxy: "",
     perIpUploadLimit: 5,
     perIpJobLimit: 5,
     downloadRateLimit: 30,
@@ -250,6 +261,7 @@ const listZipEntries = async (zipPath: string): Promise<string[]> => {
 
 afterEach(() => {
     resetDatabaseForTests();
+    resetRateLimitsForTests();
     vi.clearAllMocks();
 });
 
@@ -1236,5 +1248,179 @@ describe("mailgun delivery", () => {
 
         expect(jobs.findByInternalId("internal-job-id")?.emailStatus).toBe("sent");
         expect(create).toHaveBeenCalledTimes(1);
+    });
+});
+
+interface FakeRequestEvent {
+    __headers: Record<string, string>;
+}
+
+const makeIpEvent = (remoteAddress: string | undefined, headers: Record<string, string> = {}) =>
+    ({
+        node: {req: {socket: {remoteAddress}}},
+        __headers: Object.fromEntries(
+            Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value])
+        )
+    }) as unknown as Parameters<typeof getClientIp>[0];
+
+describe("client IP resolution and rate limiting", () => {
+    const globalWithHeader = globalThis as {getHeader?: unknown};
+    const originalGetHeader = globalWithHeader.getHeader;
+
+    beforeAll(() => {
+        globalWithHeader.getHeader = (event: unknown, name: string) =>
+            (event as FakeRequestEvent).__headers?.[name.toLowerCase()];
+    });
+
+    afterAll(() => {
+        globalWithHeader.getHeader = originalGetHeader;
+    });
+
+    it("ignores forwarded headers by default so identities cannot be spoofed", () => {
+        const event = makeIpEvent("203.0.113.7", {"x-forwarded-for": "1.2.3.4"});
+
+        expect(getClientIp(event, "")).toBe("203.0.113.7");
+        expect(getClientIp(event, "false")).toBe("203.0.113.7");
+    });
+
+    it("does not trust X-Forwarded-For from a direct (untrusted) peer", () => {
+        const event = makeIpEvent("198.51.100.9", {"x-forwarded-for": "10.0.0.1, 8.8.8.8"});
+
+        expect(getClientIp(event, "127.0.0.1,::1")).toBe("198.51.100.9");
+    });
+
+    it("resolves the real client behind a trusted loopback proxy", () => {
+        const event = makeIpEvent("127.0.0.1", {"x-forwarded-for": "203.0.113.20"});
+
+        expect(getClientIp(event, "127.0.0.1")).toBe("203.0.113.20");
+    });
+
+    it("walks past chained trusted proxies to the first untrusted hop", () => {
+        const event = makeIpEvent("10.0.0.2", {
+            "x-forwarded-for": "5.5.5.5, 203.0.113.30, 10.0.0.1"
+        });
+
+        expect(getClientIp(event, "10.0.0.0/8")).toBe("203.0.113.30");
+    });
+
+    it("normalizes IPv4-mapped IPv6 peers against CIDR trust entries", () => {
+        const event = makeIpEvent("::ffff:172.16.0.5", {"x-forwarded-for": "203.0.113.40"});
+
+        expect(getClientIp(event, "172.16.0.0/12")).toBe("203.0.113.40");
+    });
+
+    it("trusts the immediate hop in single-proxy (true) mode", () => {
+        const event = makeIpEvent("10.9.9.9", {"x-forwarded-for": "203.0.113.50"});
+
+        expect(getClientIp(event, "true")).toBe("203.0.113.50");
+    });
+
+    it("enforces the per-key upload window and isolates distinct keys", () => {
+        expect(checkUploadRateLimit("192.0.2.50", 2, 60_000)).toBe(true);
+        expect(checkUploadRateLimit("192.0.2.50", 2, 60_000)).toBe(true);
+        expect(checkUploadRateLimit("192.0.2.50", 2, 60_000)).toBe(false);
+        expect(checkUploadRateLimit("192.0.2.51", 2, 60_000)).toBe(true);
+    });
+});
+
+describe("worker shutdown and failure handling", () => {
+    const claimJob = (storageRoot: string) => {
+        const database = openDatabase(storageRoot);
+        const jobs = createJobRepository(database);
+        jobs.createJob({
+            publicJobId: "shutdown-public-id",
+            internalId: "shutdown-job",
+            displayFilename: "Book.m4b",
+            sourceFormat: "m4b",
+            fileSize: 100,
+            email: "reader@example.test",
+            sourcePath: join(storageRoot, "jobs", "shutdown-job", "source", "source.m4b"),
+            createdAt: new Date().toISOString(),
+            browserJobAccessTokenHash: hashBrowserJobAccessToken("browser-token")
+        });
+        const claimed = jobs.claimQueuedJob(new Date().toISOString());
+
+        if (!claimed) {
+            throw new Error("Expected queued job to be claimed");
+        }
+
+        return {jobs, claimed};
+    };
+
+    it("leaves an aborted job in processing state for recovery instead of failing it", async () => {
+        const storageRoot = await makeStorageRoot();
+        const {jobs, claimed} = claimJob(storageRoot);
+        const controller = new AbortController();
+        controller.abort();
+
+        await processJob(makeConfig(storageRoot), jobs, claimed, {
+            signal: controller.signal,
+            inspectAudioFile: async () => {
+                throw new Error("aborted mid-flight");
+            }
+        });
+
+        const after = jobs.findByInternalId("shutdown-job");
+        expect(after?.status).toBe("processing");
+        expect(after?.publicErrorCode).toBeNull();
+    });
+
+    it("marks a job failed when processing errors without a shutdown abort", async () => {
+        const storageRoot = await makeStorageRoot();
+        const {jobs, claimed} = claimJob(storageRoot);
+
+        await processJob(makeConfig(storageRoot), jobs, claimed, {
+            inspectAudioFile: async () => {
+                throw new PublicJobError("INVALID_AUDIO_FILE");
+            }
+        });
+
+        const after = jobs.findByInternalId("shutdown-job");
+        expect(after?.status).toBe("failed");
+        expect(after?.publicErrorCode).toBe("INVALID_AUDIO_FILE");
+    });
+});
+
+describe("production config validation", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+
+    afterEach(() => {
+        process.env.NODE_ENV = originalNodeEnv;
+    });
+
+    it("is a no-op outside production even with unsafe values", () => {
+        process.env.NODE_ENV = "development";
+
+        expect(() =>
+            validateProductionConfig({
+                ...makeConfig("."),
+                downloadSigningSecret: "",
+                mailgunKey: "",
+                appBaseUrl: "http://localhost:3000"
+            })
+        ).not.toThrow();
+    });
+
+    it("throws in production when required values are missing or unsafe", () => {
+        process.env.NODE_ENV = "production";
+
+        expect(() =>
+            validateProductionConfig({
+                ...makeConfig("."),
+                downloadSigningSecret: "",
+                appBaseUrl: "http://localhost:3000"
+            })
+        ).toThrow(/NUXT_DOWNLOAD_SIGNING_SECRET/);
+    });
+
+    it("passes in production when all required values are set", () => {
+        process.env.NODE_ENV = "production";
+
+        expect(() =>
+            validateProductionConfig({
+                ...makeConfig("."),
+                appBaseUrl: "https://chaptify.example"
+            })
+        ).not.toThrow();
     });
 });

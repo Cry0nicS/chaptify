@@ -265,8 +265,11 @@ const verifyChapterOutput = async (
  * Stream-copies one output file per validated chapter.
  *
  * FFmpeg receives an argument array, maps only the first audio stream, and drops video, subtitle,
- * and data streams from chapter files. If any chapter fails or produces an empty file, all partial
- * chapter output is removed before the public processing failure is reported.
+ * and data streams from chapter files. Each chapter is cut with a fast input-side `-ss` seek plus an
+ * explicit output-side `-t` duration (`end - start`) rather than `-to`, whose meaning as an input
+ * option is FFmpeg-version-dependent; this keeps chapter lengths stable across builds. If any
+ * chapter fails or produces an empty file, all partial chapter output is removed before the public
+ * processing failure is reported.
  */
 export const splitChapters = async (
     storageRoot: string,
@@ -311,10 +314,10 @@ export const splitChapters = async (
                     "-y",
                     "-ss",
                     String(chapter.start),
-                    "-to",
-                    String(chapter.end),
                     "-i",
                     sourcePath,
+                    "-t",
+                    String(chapter.end - chapter.start),
                     "-map",
                     "0:a:0",
                     "-map_chapters",
