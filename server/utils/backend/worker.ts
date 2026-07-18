@@ -16,6 +16,12 @@ import {ensurePathInside, jobDirectory} from "./paths";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * How long a claimed completion email is leased before another worker may retry it. Longer than the
+ * Mailgun request timeout so a normal send finishes first; a crash mid-send releases it afterwards.
+ */
+const EMAIL_SEND_LEASE_MS = 5 * 60_000;
+
 const safeDiagnostic = (error: unknown): string =>
     error instanceof Error ? error.name || "Error" : "Unknown error";
 
@@ -108,6 +114,13 @@ export const deliverReadyEmail = async (
 
     if (new Date(job.expiresAt).getTime() <= Date.now()) {
         jobs.markEmailFailed(job.internalId, "expired");
+        return;
+    }
+
+    // Claim delivery atomically so the inline post-processing path and the retry loop cannot both
+    // send this job's email across the Mailgun await.
+    const leaseUntil = new Date(Date.now() + EMAIL_SEND_LEASE_MS).toISOString();
+    if (!jobs.claimEmailDelivery(job.internalId, new Date().toISOString(), leaseUntil)) {
         return;
     }
 

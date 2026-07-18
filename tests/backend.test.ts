@@ -1249,6 +1249,35 @@ describe("mailgun delivery", () => {
         expect(jobs.findByInternalId("internal-job-id")?.emailStatus).toBe("sent");
         expect(create).toHaveBeenCalledTimes(1);
     });
+
+    it("sends the completion email only once when two deliveries race", async () => {
+        const mocked = await import("mailgun.js");
+        const create = Reflect.get(mocked, "__mailgunCreate") as ReturnType<typeof vi.fn>;
+        create.mockResolvedValue({});
+        const {storageRoot, jobs} = await createRepository();
+        createQueuedJob(jobs, storageRoot);
+        jobs.claimQueuedJob(new Date().toISOString());
+        jobs.markReady(
+            "internal-job-id",
+            join(storageRoot, "jobs", "internal-job-id", "output", "book.zip"),
+            null,
+            new Date().toISOString(),
+            new Date(Date.now() + 60_000).toISOString()
+        );
+        const job = jobs.findByInternalId("internal-job-id");
+
+        if (!job) {
+            throw new Error("Expected ready job");
+        }
+
+        await Promise.all([
+            deliverReadyEmail(makeConfig(storageRoot), jobs, job),
+            deliverReadyEmail(makeConfig(storageRoot), jobs, job)
+        ]);
+
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(jobs.findByInternalId("internal-job-id")?.emailStatus).toBe("sent");
+    });
 });
 
 interface FakeRequestEvent {
@@ -1313,6 +1342,18 @@ describe("client IP resolution and rate limiting", () => {
         const event = makeIpEvent("10.9.9.9", {"x-forwarded-for": "203.0.113.50"});
 
         expect(getClientIp(event, "true")).toBe("203.0.113.50");
+    });
+
+    it("matches IPv6 CIDR and exact trust entries across textual forms", () => {
+        const cidrPeer = makeIpEvent("2001:db8:0:0:0:0:0:1", {"x-forwarded-for": "203.0.113.60"});
+        expect(getClientIp(cidrPeer, "2001:db8::/32")).toBe("203.0.113.60");
+
+        const exactPeer = makeIpEvent("2001:0db8::1", {"x-forwarded-for": "203.0.113.61"});
+        expect(getClientIp(exactPeer, "2001:db8::1")).toBe("203.0.113.61");
+
+        // A v4 peer must not match a v6 trust entry (family mismatch) → not trusted → socket peer.
+        const v4Peer = makeIpEvent("198.51.100.10", {"x-forwarded-for": "203.0.113.62"});
+        expect(getClientIp(v4Peer, "2001:db8::/32")).toBe("198.51.100.10");
     });
 
     it("enforces the per-key upload window and isolates distinct keys", () => {

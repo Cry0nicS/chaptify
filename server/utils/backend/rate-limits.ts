@@ -113,14 +113,19 @@ const normalizeIp = (value: string): string => {
     return trimmed.toLowerCase();
 };
 
-const ipv4ToInt = (ip: string): number | null => {
+interface ParsedIp {
+    value: bigint;
+    bits: 32 | 128;
+}
+
+const ipv4ToBigInt = (ip: string): bigint | null => {
     const parts = ip.split(".");
 
     if (parts.length !== 4) {
         return null;
     }
 
-    let result = 0;
+    let result = 0n;
 
     for (const part of parts) {
         if (!/^\d{1,3}$/.test(part)) {
@@ -133,17 +138,74 @@ const ipv4ToInt = (ip: string): number | null => {
             return null;
         }
 
-        result = result * 256 + octet;
+        result = (result << 8n) | BigInt(octet);
     }
 
-    return result >>> 0;
+    return result;
+};
+
+const ipv6ToBigInt = (ip: string): bigint | null => {
+    let text = ip;
+
+    // An IPv6 address may embed a trailing dotted-quad (a:b:...:1.2.3.4). Fold it into two groups.
+    if (text.includes(".")) {
+        const lastColon = text.lastIndexOf(":");
+        const embedded = ipv4ToBigInt(text.slice(lastColon + 1));
+
+        if (embedded === null) {
+            return null;
+        }
+
+        const hex = embedded.toString(16).padStart(8, "0");
+        text = `${text.slice(0, lastColon + 1)}${hex.slice(0, 4)}:${hex.slice(4)}`;
+    }
+
+    const halves = text.split("::");
+
+    if (halves.length > 2) {
+        return null;
+    }
+
+    const head = halves[0] ? halves[0].split(":") : [];
+    const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+    const padding = Array.from({length: 8 - head.length - tail.length}).fill("0") as string[];
+    const groups = halves.length === 2 ? [...head, ...padding, ...tail] : head;
+
+    if (groups.length !== 8) {
+        return null;
+    }
+
+    let result = 0n;
+
+    for (const group of groups) {
+        if (!/^[0-9a-f]{1,4}$/.test(group)) {
+            return null;
+        }
+
+        result = (result << 16n) | BigInt(Number.parseInt(group, 16));
+    }
+
+    return result;
+};
+
+const parseIp = (ip: string): ParsedIp | null => {
+    if (ip.includes(":")) {
+        const value = ipv6ToBigInt(ip);
+
+        return value === null ? null : {value, bits: 128};
+    }
+
+    const value = ipv4ToBigInt(ip);
+
+    return value === null ? null : {value, bits: 32};
 };
 
 /**
  * Tests whether a normalized IP matches a single trust-list entry.
  *
- * Entries may be an exact IPv4/IPv6 address or an IPv4 CIDR block. IPv6 is supported by exact match
- * only, which covers the loopback and container peers relevant to this deployment.
+ * Entries may be an exact IPv4/IPv6 address or an IPv4/IPv6 CIDR block. Comparison is numeric, so
+ * differing textual forms of the same IPv6 address still match, and an entry of a different family
+ * from the candidate never matches.
  */
 const matchesTrustEntry = (normalizedIp: string, entry: string): boolean => {
     const trimmed = entry.trim();
@@ -152,22 +214,29 @@ const matchesTrustEntry = (normalizedIp: string, entry: string): boolean => {
         return false;
     }
 
+    const candidate = parseIp(normalizedIp);
+
+    if (!candidate) {
+        return false;
+    }
+
     const slashIndex = trimmed.indexOf("/");
 
     if (slashIndex === -1) {
-        return normalizeIp(trimmed) === normalizedIp;
+        const exact = parseIp(normalizeIp(trimmed));
+
+        return Boolean(exact) && exact!.bits === candidate.bits && exact!.value === candidate.value;
     }
 
-    const network = ipv4ToInt(normalizeIp(trimmed.slice(0, slashIndex)));
-    const address = ipv4ToInt(normalizedIp);
+    const network = parseIp(normalizeIp(trimmed.slice(0, slashIndex)));
     const prefix = Number(trimmed.slice(slashIndex + 1));
 
     if (
-        network === null ||
-        address === null ||
+        !network ||
+        network.bits !== candidate.bits ||
         !Number.isInteger(prefix) ||
         prefix < 0 ||
-        prefix > 32
+        prefix > network.bits
     ) {
         return false;
     }
@@ -176,9 +245,9 @@ const matchesTrustEntry = (normalizedIp: string, entry: string): boolean => {
         return true;
     }
 
-    const mask = (~0 << (32 - prefix)) >>> 0;
+    const mask = ((1n << BigInt(network.bits)) - 1n) ^ ((1n << BigInt(network.bits - prefix)) - 1n);
 
-    return (address & mask) === (network & mask);
+    return (candidate.value & mask) === (network.value & mask);
 };
 
 type TrustPolicy = {mode: "none"} | {mode: "all"} | {mode: "list"; entries: string[]};
@@ -218,7 +287,7 @@ const parseTrustPolicy = (trustProxy: string): TrustPolicy => {
  *   left-most entries.
  */
 export const getClientIp = (event: H3Event, trustProxy = ""): string => {
-    const socketIp = normalizeIp(event.node.req.socket.remoteAddress || "") || "unknown";
+    const socketIp = normalizeIp(event.node.req.socket?.remoteAddress || "") || "unknown";
     const policy = parseTrustPolicy(trustProxy);
 
     if (policy.mode === "none") {

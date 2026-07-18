@@ -110,69 +110,109 @@ export const getBackendConfigFromEnv = (): BackendConfig =>
  * Environment values can still override runtime config during Docker starts, and
  * `CHAPTIFY_APP_BASE_URL` avoids Nuxt treating `NUXT_APP_BASE_URL` as a route base path.
  */
+/**
+ * Returns the first source value that is actually set.
+ *
+ * Like `a || b || c` for the string inputs this config uses, but treats only `undefined`, `null`,
+ * and `""` as unset — so a legitimate `0` from one source is not silently discarded in favour of a
+ * later fallback.
+ */
+const pick = (...values: unknown[]): unknown =>
+    values.find((value) => value !== undefined && value !== null && value !== "");
+
 export const getBackendConfig = (): BackendConfig => {
     const runtimeConfig = typeof useRuntimeConfig === "function" ? useRuntimeConfig() : {};
     const values = runtimeConfig as Record<string, unknown>;
 
     return runtimeConfigSchema.parse({
-        appBaseUrl:
-            process.env.CHAPTIFY_APP_BASE_URL ||
-            process.env.NUXT_APP_BASE_URL ||
-            values.appBaseUrl ||
-            "http://localhost:3000",
-        storageRoot: values.storageRoot || process.env.NUXT_STORAGE_ROOT || DEFAULT_STORAGE_ROOT,
-        maxUploadBytes: values.maxUploadBytes || process.env.NUXT_MAX_UPLOAD_BYTES,
-        maxQueuedJobs: values.maxQueuedJobs || process.env.NUXT_MAX_QUEUED_JOBS,
-        maxConcurrentUploads:
-            values.maxConcurrentUploads || process.env.NUXT_MAX_CONCURRENT_UPLOADS,
-        uploadIdleTimeoutSeconds:
-            values.uploadIdleTimeoutSeconds || process.env.NUXT_UPLOAD_IDLE_TIMEOUT_SECONDS,
-        trustProxy: values.trustProxy || process.env.NUXT_TRUST_PROXY || "",
-        perIpUploadLimit: values.perIpUploadLimit || process.env.NUXT_PER_IP_UPLOAD_LIMIT,
-        perIpJobLimit: values.perIpJobLimit || process.env.NUXT_PER_IP_JOB_LIMIT,
-        downloadRateLimit: values.downloadRateLimit || process.env.NUXT_DOWNLOAD_RATE_LIMIT,
-        storageReservationMultiplier:
-            values.storageReservationMultiplier || process.env.NUXT_STORAGE_RESERVATION_MULTIPLIER,
-        storageReservationSafetyBytes:
-            values.storageReservationSafetyBytes ||
-            process.env.NUXT_STORAGE_RESERVATION_SAFETY_BYTES,
-        storageReservationTtlMinutes:
-            values.storageReservationTtlMinutes || process.env.NUXT_STORAGE_RESERVATION_TTL_MINUTES,
-        orphanJobDirectoryMinAgeMinutes:
-            values.orphanJobDirectoryMinAgeMinutes ||
-            process.env.NUXT_ORPHAN_JOB_DIRECTORY_MIN_AGE_MINUTES,
-        cleanupIntervalSeconds:
-            values.cleanupIntervalSeconds || process.env.NUXT_CLEANUP_INTERVAL_SECONDS,
-        browserDownloadGrantLifetimeSeconds:
-            values.browserDownloadGrantLifetimeSeconds ||
-            process.env.NUXT_BROWSER_DOWNLOAD_GRANT_LIFETIME_SECONDS,
-        browserDownloadGrantUsedGraceSeconds:
-            values.browserDownloadGrantUsedGraceSeconds ||
-            process.env.NUXT_BROWSER_DOWNLOAD_GRANT_USED_GRACE_SECONDS,
-        workerConcurrency: values.workerConcurrency || process.env.NUXT_WORKER_CONCURRENCY,
-        jobRetentionHours: values.jobRetentionHours || process.env.NUXT_JOB_RETENTION_HOURS,
-        maxAudiobookDurationSeconds:
-            values.maxAudiobookDurationSeconds || process.env.NUXT_MAX_AUDIOBOOK_DURATION_SECONDS,
-        maxChapters: values.maxChapters || process.env.NUXT_MAX_CHAPTERS,
-        jobProcessingTimeoutSeconds:
-            values.jobProcessingTimeoutSeconds || process.env.NUXT_JOB_PROCESSING_TIMEOUT_SECONDS,
-        ffprobeTimeoutSeconds:
-            values.ffprobeTimeoutSeconds || process.env.NUXT_FFPROBE_TIMEOUT_SECONDS,
-        ffmpegChapterTimeoutSeconds:
-            values.ffmpegChapterTimeoutSeconds || process.env.NUXT_FFMPEG_CHAPTER_TIMEOUT_SECONDS,
-        emailRetryAttempts: values.emailRetryAttempts || process.env.NUXT_EMAIL_RETRY_ATTEMPTS,
-        downloadSigningSecret:
-            values.downloadSigningSecret || process.env.NUXT_DOWNLOAD_SIGNING_SECRET || "",
-        emailRetryBaseDelaySeconds:
-            values.emailRetryBaseDelaySeconds || process.env.NUXT_EMAIL_RETRY_BASE_DELAY_SECONDS,
-        emailRetryMaxDelaySeconds:
-            values.emailRetryMaxDelaySeconds || process.env.NUXT_EMAIL_RETRY_MAX_DELAY_SECONDS,
-        mailgunBaseUrl: values.mailgunBaseUrl || process.env.NUXT_MAILGUN_BASE_URL || "",
-        mailgunDomain: values.mailgunDomain || process.env.NUXT_MAILGUN_DOMAIN || "",
-        mailgunKey: values.mailgunKey || process.env.NUXT_MAILGUN_KEY || "",
-        mailgunSender: values.mailgunSender || process.env.NUXT_MAILGUN_SENDER || "",
-        mailgunRecipient: values.mailgunRecipient || process.env.NUXT_MAILGUN_RECIPIENT || "",
-        mailgunBcc: values.mailgunBcc || process.env.NUXT_MAILGUN_BCC || ""
+        appBaseUrl: pick(
+            process.env.CHAPTIFY_APP_BASE_URL,
+            process.env.NUXT_APP_BASE_URL,
+            values.appBaseUrl,
+            "http://localhost:3000"
+        ),
+        storageRoot: pick(values.storageRoot, process.env.NUXT_STORAGE_ROOT, DEFAULT_STORAGE_ROOT),
+        maxUploadBytes: pick(values.maxUploadBytes, process.env.NUXT_MAX_UPLOAD_BYTES),
+        maxQueuedJobs: pick(values.maxQueuedJobs, process.env.NUXT_MAX_QUEUED_JOBS),
+        maxConcurrentUploads: pick(
+            values.maxConcurrentUploads,
+            process.env.NUXT_MAX_CONCURRENT_UPLOADS
+        ),
+        uploadIdleTimeoutSeconds: pick(
+            values.uploadIdleTimeoutSeconds,
+            process.env.NUXT_UPLOAD_IDLE_TIMEOUT_SECONDS
+        ),
+        trustProxy: pick(values.trustProxy, process.env.NUXT_TRUST_PROXY, ""),
+        perIpUploadLimit: pick(values.perIpUploadLimit, process.env.NUXT_PER_IP_UPLOAD_LIMIT),
+        perIpJobLimit: pick(values.perIpJobLimit, process.env.NUXT_PER_IP_JOB_LIMIT),
+        downloadRateLimit: pick(values.downloadRateLimit, process.env.NUXT_DOWNLOAD_RATE_LIMIT),
+        storageReservationMultiplier: pick(
+            values.storageReservationMultiplier,
+            process.env.NUXT_STORAGE_RESERVATION_MULTIPLIER
+        ),
+        storageReservationSafetyBytes: pick(
+            values.storageReservationSafetyBytes,
+            process.env.NUXT_STORAGE_RESERVATION_SAFETY_BYTES
+        ),
+        storageReservationTtlMinutes: pick(
+            values.storageReservationTtlMinutes,
+            process.env.NUXT_STORAGE_RESERVATION_TTL_MINUTES
+        ),
+        orphanJobDirectoryMinAgeMinutes: pick(
+            values.orphanJobDirectoryMinAgeMinutes,
+            process.env.NUXT_ORPHAN_JOB_DIRECTORY_MIN_AGE_MINUTES
+        ),
+        cleanupIntervalSeconds: pick(
+            values.cleanupIntervalSeconds,
+            process.env.NUXT_CLEANUP_INTERVAL_SECONDS
+        ),
+        browserDownloadGrantLifetimeSeconds: pick(
+            values.browserDownloadGrantLifetimeSeconds,
+            process.env.NUXT_BROWSER_DOWNLOAD_GRANT_LIFETIME_SECONDS
+        ),
+        browserDownloadGrantUsedGraceSeconds: pick(
+            values.browserDownloadGrantUsedGraceSeconds,
+            process.env.NUXT_BROWSER_DOWNLOAD_GRANT_USED_GRACE_SECONDS
+        ),
+        workerConcurrency: pick(values.workerConcurrency, process.env.NUXT_WORKER_CONCURRENCY),
+        jobRetentionHours: pick(values.jobRetentionHours, process.env.NUXT_JOB_RETENTION_HOURS),
+        maxAudiobookDurationSeconds: pick(
+            values.maxAudiobookDurationSeconds,
+            process.env.NUXT_MAX_AUDIOBOOK_DURATION_SECONDS
+        ),
+        maxChapters: pick(values.maxChapters, process.env.NUXT_MAX_CHAPTERS),
+        jobProcessingTimeoutSeconds: pick(
+            values.jobProcessingTimeoutSeconds,
+            process.env.NUXT_JOB_PROCESSING_TIMEOUT_SECONDS
+        ),
+        ffprobeTimeoutSeconds: pick(
+            values.ffprobeTimeoutSeconds,
+            process.env.NUXT_FFPROBE_TIMEOUT_SECONDS
+        ),
+        ffmpegChapterTimeoutSeconds: pick(
+            values.ffmpegChapterTimeoutSeconds,
+            process.env.NUXT_FFMPEG_CHAPTER_TIMEOUT_SECONDS
+        ),
+        emailRetryAttempts: pick(values.emailRetryAttempts, process.env.NUXT_EMAIL_RETRY_ATTEMPTS),
+        downloadSigningSecret: pick(
+            values.downloadSigningSecret,
+            process.env.NUXT_DOWNLOAD_SIGNING_SECRET,
+            ""
+        ),
+        emailRetryBaseDelaySeconds: pick(
+            values.emailRetryBaseDelaySeconds,
+            process.env.NUXT_EMAIL_RETRY_BASE_DELAY_SECONDS
+        ),
+        emailRetryMaxDelaySeconds: pick(
+            values.emailRetryMaxDelaySeconds,
+            process.env.NUXT_EMAIL_RETRY_MAX_DELAY_SECONDS
+        ),
+        mailgunBaseUrl: pick(values.mailgunBaseUrl, process.env.NUXT_MAILGUN_BASE_URL, ""),
+        mailgunDomain: pick(values.mailgunDomain, process.env.NUXT_MAILGUN_DOMAIN, ""),
+        mailgunKey: pick(values.mailgunKey, process.env.NUXT_MAILGUN_KEY, ""),
+        mailgunSender: pick(values.mailgunSender, process.env.NUXT_MAILGUN_SENDER, ""),
+        mailgunRecipient: pick(values.mailgunRecipient, process.env.NUXT_MAILGUN_RECIPIENT, ""),
+        mailgunBcc: pick(values.mailgunBcc, process.env.NUXT_MAILGUN_BCC, "")
     });
 };
 

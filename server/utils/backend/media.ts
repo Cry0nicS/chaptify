@@ -1,4 +1,4 @@
-import {mkdir, readdir, rm, stat} from "node:fs/promises";
+import {mkdir, rm, stat} from "node:fs/promises";
 import {join} from "node:path";
 import {z} from "zod";
 import {PublicJobError} from "./errors";
@@ -364,10 +364,4 @@ export const splitChapters = async (
     }
 
     return outputPaths;
-};
-
-export const listChapterFilesInOrder = async (chaptersDirectory: string): Promise<string[]> => {
-    const entries = await readdir(chaptersDirectory);
-
-    return entries.sort().map((entry) => join(chaptersDirectory, entry));
 };

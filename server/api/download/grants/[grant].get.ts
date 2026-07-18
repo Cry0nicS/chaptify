@@ -1,4 +1,5 @@
 import {createReadStream} from "node:fs";
+import {stat} from "node:fs/promises";
 import {basename} from "node:path";
 import {createBackendContext} from "../../../utils/backend/context";
 import {hashBrowserDownloadGrantToken} from "../../../utils/backend/ids";
@@ -38,6 +39,13 @@ export default defineEventHandler(async (event) => {
     }
 
     const zipPath = ensurePathInside(config.storageRoot, job.zipPath);
+
+    try {
+        await stat(zipPath);
+    } catch {
+        throw createError({statusCode: 404, statusMessage: "Not found"});
+    }
+
     setHeader(event, "Content-Type", "application/zip");
     setHeader(
         event,
