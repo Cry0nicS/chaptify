@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
 # === Build Stage ===
-FROM node:22-alpine AS builder
+# Pin the Alpine minor so the FFmpeg/ffprobe build shipped in the runtime stage is reproducible.
+FROM node:22-alpine3.24 AS builder
 WORKDIR /app
 
 RUN apk add --no-cache python3 make g++
@@ -17,7 +18,7 @@ RUN npm run build
 
 
 # === Production Stage ===
-FROM node:22-alpine AS production
+FROM node:22-alpine3.24 AS production
 WORKDIR /app
 
 # Set runtime environment

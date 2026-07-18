@@ -304,46 +304,56 @@ export const splitChapters = async (
             const metadataArgs = inspection.bookTitle
                 ? ["-metadata", `album=${inspection.bookTitle}`]
                 : [];
-            remainingTimeoutMs(limits.ffmpegChapterTimeoutMs, options.deadlineMs);
-            await runProcess(
-                "ffmpeg",
-                [
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-y",
-                    "-ss",
-                    String(chapter.start),
-                    "-i",
-                    sourcePath,
-                    "-t",
-                    String(chapter.end - chapter.start),
-                    "-map",
-                    "0:a:0",
-                    "-map_chapters",
-                    "-1",
-                    "-map_metadata",
-                    "-1",
-                    "-vn",
-                    "-sn",
-                    "-dn",
-                    "-c:a",
-                    "copy",
-                    "-metadata",
-                    `title=${chapterTitle}`,
-                    "-metadata",
-                    `track=${track}`,
-                    ...metadataArgs,
-                    outputPath
-                ],
-                remainingTimeoutMs(limits.ffmpegChapterTimeoutMs, options.deadlineMs),
-                options.signal
-            );
-            const outputStats = await stat(outputPath);
-            if (outputStats.size === 0) {
-                throw new Error("Empty chapter output");
+
+            try {
+                await runProcess(
+                    "ffmpeg",
+                    [
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-ss",
+                        String(chapter.start),
+                        "-i",
+                        sourcePath,
+                        "-t",
+                        String(chapter.end - chapter.start),
+                        "-map",
+                        "0:a:0",
+                        "-map_chapters",
+                        "-1",
+                        "-map_metadata",
+                        "-1",
+                        "-vn",
+                        "-sn",
+                        "-dn",
+                        "-c:a",
+                        "copy",
+                        "-metadata",
+                        `title=${chapterTitle}`,
+                        "-metadata",
+                        `track=${track}`,
+                        ...metadataArgs,
+                        outputPath
+                    ],
+                    remainingTimeoutMs(limits.ffmpegChapterTimeoutMs, options.deadlineMs),
+                    options.signal
+                );
+                const outputStats = await stat(outputPath);
+                if (outputStats.size === 0) {
+                    throw new Error("Empty chapter output");
+                }
+                await verifyChapterOutput(outputPath, chapter, chapterTitle, track, options);
+            } catch (error) {
+                // Attach chapter context so a single bad boundary is diagnosable in internal logs
+                // instead of surfacing only as a blanket processing failure.
+                throw new Error(
+                    `Chapter ${track} "${chapterTitle}": ${
+                        error instanceof Error ? error.message : String(error)
+                    }`
+                );
             }
-            await verifyChapterOutput(outputPath, chapter, chapterTitle, track, options);
 
             outputPaths.push(outputPath);
             onChapterComplete(index + 1, inspection.chapters.length);
