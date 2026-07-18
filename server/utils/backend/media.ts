@@ -154,6 +154,10 @@ export const inspectAudioFile = async (
             [
                 "-v",
                 "error",
+                // Restrict to the local file protocol so a crafted upload (e.g. a disguised HLS or
+                // concat playlist) cannot make ffprobe open http/tcp/udp/ftp or other resources.
+                "-protocol_whitelist",
+                "file",
                 "-show_format",
                 "-show_streams",
                 "-show_chapters",
@@ -227,6 +231,8 @@ const verifyChapterOutput = async (
         [
             "-v",
             "error",
+            "-protocol_whitelist",
+            "file",
             "-show_format",
             "-show_streams",
             "-show_chapters",
@@ -309,10 +315,15 @@ export const splitChapters = async (
                 await runProcess(
                     "ffmpeg",
                     [
+                        // Never read stdin, and restrict to the local file protocol so a crafted
+                        // input cannot make ffmpeg open external (http/tcp/udp/ftp/...) resources.
+                        "-nostdin",
                         "-hide_banner",
                         "-loglevel",
                         "error",
                         "-y",
+                        "-protocol_whitelist",
+                        "file",
                         "-ss",
                         String(chapter.start),
                         "-i",

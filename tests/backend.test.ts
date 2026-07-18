@@ -1465,3 +1465,36 @@ describe("production config validation", () => {
         ).not.toThrow();
     });
 });
+
+describe("media input hardening", () => {
+    it("rejects a disguised playlist upload without making an outbound request", async () => {
+        const {createServer} = await import("node:http");
+        let hits = 0;
+        const server = createServer((_request, response) => {
+            hits += 1;
+            response.end("segment");
+        });
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const address = server.address();
+        const port = typeof address === "object" && address ? address.port : 0;
+
+        try {
+            const root = await makeStorageRoot();
+            // A crafted "audiobook" that is really an HLS playlist pointing at an external URL.
+            const sourcePath = join(root, "source.mp3");
+            await writeFile(
+                sourcePath,
+                `#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:10,\nhttp://127.0.0.1:${port}/segment.ts\n#EXT-X-ENDLIST\n`
+            );
+
+            // ffprobe/ffmpeg run with -protocol_whitelist file, so the crafted input is rejected as
+            // invalid media and can never reach the external reference.
+            await expect(inspectAudioFile(sourcePath, "mp3")).rejects.toThrow(PublicJobError);
+            expect(hits).toBe(0);
+        } finally {
+            await new Promise<void>((resolve) => {
+                server.close(() => resolve());
+            });
+        }
+    });
+});
