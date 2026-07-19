@@ -1,9 +1,12 @@
 import {z} from "zod";
 import {
+    OUTPUT_FORMATS,
     PUBLIC_EMAIL_STATUSES,
     PUBLIC_JOB_STATUSES,
     PUBLIC_PROCESSING_ERROR_CODES
 } from "../constants/api";
+
+export const outputFormatSchema = z.enum(OUTPUT_FORMATS);
 
 export const publicJobStatusSchema = z.enum(PUBLIC_JOB_STATUSES);
 
@@ -53,5 +56,6 @@ export const uploadMetadataSchema = z.object({
     email: z.string().email().max(320),
     fileName: z.string().min(1).max(255),
     fileSize: z.number().int().positive(),
-    extension: z.enum(["mp3", "m4b"])
+    extension: z.enum(["mp3", "m4b"]),
+    outputFormat: outputFormatSchema
 });

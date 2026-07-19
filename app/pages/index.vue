@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type {JobStatusResponse, UploadJobResponse} from "#shared/utils/types";
+import type {JobStatusResponse, OutputFormat, UploadJobResponse} from "#shared/utils/types";
 import type {FrontendApiError} from "../utils/api-errors";
 import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue";
 import {browserDownloadGrantResponseSchema} from "#shared/utils/schemas";
 import {toFrontendApiError} from "../utils/api-errors";
 import {maskEmailAddress, validateEmailAddress} from "../utils/email";
-import {validateAudiobookFile} from "../utils/file-validation";
+import {getAudiobookExtension, validateAudiobookFile} from "../utils/file-validation";
 import {formatFileSize} from "../utils/format-file-size";
 import {displayProcessingProgress} from "../utils/progress";
 
@@ -21,6 +21,7 @@ type WorkflowState =
 
 const selectedFile = ref<File | null>(null);
 const email = ref("");
+const outputFormat = ref<OutputFormat>("mp3");
 const workflow = ref<WorkflowState>({status: "idle"});
 const pageError = ref<FrontendApiError | null>(null);
 const submittedEmail = ref<string | null>(null);
@@ -164,6 +165,8 @@ watch(isUploading, (uploading) => {
 const onFileSelected = (file: File) => {
     selectedFile.value = file;
     pageError.value = null;
+    // Default the output to the uploaded format (stream copy); the user can switch to convert.
+    outputFormat.value = getAudiobookExtension(file.name) ?? "mp3";
     workflow.value = {status: "selected"};
 };
 
@@ -242,7 +245,8 @@ const submitUpload = async () => {
 
     const result = await uploadJob({
         file: selectedFile.value,
-        email: email.value
+        email: email.value,
+        outputFormat: outputFormat.value
     });
 
     if (result.ok) {
@@ -267,6 +271,7 @@ const startOver = () => {
     clearActiveJob();
     selectedFile.value = null;
     email.value = "";
+    outputFormat.value = "mp3";
     submittedEmail.value = null;
     pageError.value = null;
     browserDownloadError.value = null;
@@ -340,6 +345,7 @@ onBeforeUnmount(() => {
                 <AudiobookUploadForm
                     v-else-if="showUploadForm"
                     v-model:email="email"
+                    v-model:output-format="outputFormat"
                     :file="selectedFile"
                     :disabled="workflow.status === 'uploading'"
                     :is-uploading="workflow.status === 'uploading'"

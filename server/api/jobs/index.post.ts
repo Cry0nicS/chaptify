@@ -3,7 +3,7 @@ import {mkdir, rm} from "node:fs/promises";
 import {join} from "node:path";
 import formidable from "formidable";
 import {z} from "zod";
-import {uploadMetadataSchema} from "../../../shared/utils/schemas";
+import {outputFormatSchema, uploadMetadataSchema} from "../../../shared/utils/schemas";
 import {createBackendContext} from "../../utils/backend/context";
 import {PublicJobError} from "../../utils/backend/errors";
 import {
@@ -51,7 +51,7 @@ const parseMultipartUpload = async (
 
     const form = formidable({
         uploadDir: uploadDirectory,
-        maxFields: 1,
+        maxFields: 2,
         maxFieldsSize: 512,
         maxFiles: 1,
         maxFileSize: maxUploadBytes,
@@ -263,6 +263,13 @@ export default defineEventHandler(async (event) => {
             : [parsed.fields.email];
         const emailValue = emailValues[0];
         const {email} = fieldsSchema.parse({email: emailValue});
+        const rawOutputFormat = parsed.fields.outputFormat;
+        const outputFormatValues = Array.isArray(rawOutputFormat)
+            ? rawOutputFormat
+            : rawOutputFormat === undefined
+              ? []
+              : [rawOutputFormat];
+        const allowedFieldNames = new Set(["email", "outputFormat"]);
         const fileValues = parsed.files.file;
         const files = Array.isArray(fileValues) ? fileValues : [fileValues];
         const file = files[0];
@@ -271,12 +278,13 @@ export default defineEventHandler(async (event) => {
             !file ||
             files.length !== 1 ||
             emailValues.length !== 1 ||
+            outputFormatValues.length > 1 ||
             Object.keys(parsed.files).length !== 1 ||
-            Object.keys(parsed.fields).length !== 1
+            Object.keys(parsed.fields).some((name) => !allowedFieldNames.has(name))
         ) {
             throw new PublicJobError(
                 "UNSUPPORTED_FILE_TYPE",
-                "Expected exactly one file and email field"
+                "Expected one file, an email, and an optional output format"
             );
         }
 
@@ -287,12 +295,20 @@ export default defineEventHandler(async (event) => {
             throw new PublicJobError("UNSUPPORTED_FILE_TYPE");
         }
 
+        // Default the output format to the uploaded format (stream copy); a different choice
+        // re-encodes the chapters to the requested format.
+        const outputFormat =
+            outputFormatValues.length === 1
+                ? outputFormatSchema.parse(outputFormatValues[0])
+                : extension;
+
         const fileSize = file.size;
         uploadMetadataSchema.parse({
             email,
             fileName: originalFilename,
             fileSize,
-            extension
+            extension,
+            outputFormat
         });
 
         if (!tempPath) {
@@ -335,6 +351,7 @@ export default defineEventHandler(async (event) => {
                 internalId: storedUpload.internalId,
                 displayFilename: storedUpload.displayFilename,
                 sourceFormat: storedUpload.sourceFormat,
+                outputFormat,
                 fileSize: storedUpload.fileSize,
                 email,
                 sourcePath: storedUpload.sourcePath,

@@ -1,4 +1,4 @@
-import type {UploadJobResponse} from "#shared/utils/types";
+import type {OutputFormat, UploadJobResponse} from "#shared/utils/types";
 import type {FrontendApiError} from "../utils/api-errors";
 import {ref} from "vue";
 import {uploadJobResponseSchema} from "#shared/utils/schemas";
@@ -29,6 +29,7 @@ export type UploadResult =
 interface UploadOptions {
     file: File;
     email: string;
+    outputFormat: OutputFormat;
     timeoutMs?: number;
 }
 
@@ -122,6 +123,7 @@ export const useJobUpload = (options: UseJobUploadOptions = {}) => {
     const uploadJob = async ({
         file,
         email,
+        outputFormat,
         timeoutMs = 0
     }: UploadOptions): Promise<UploadResult> => {
         if (isUploading.value) {
@@ -140,6 +142,7 @@ export const useJobUpload = (options: UseJobUploadOptions = {}) => {
         const formData = new FormData();
         formData.append("file", file);
         formData.append("email", email.trim());
+        formData.append("outputFormat", outputFormat);
 
         isUploading.value = true;
         progress.value = defaultProgress();

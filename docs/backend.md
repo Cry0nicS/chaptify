@@ -23,8 +23,9 @@ The storage root must be writable by both API and worker. It is never served sta
 
 ## API Endpoints
 
-- `POST /api/jobs` accepts multipart form fields `file` and `email`, streams one `.mp3` or `.m4b`
-  upload to disk, validates queue and size limits, creates a queued job, and returns `202`.
+- `POST /api/jobs` accepts multipart form fields `file`, `email`, and an optional `outputFormat`
+  (`mp3` or `m4b`; defaults to the uploaded format), streams one `.mp3` or `.m4b` upload to disk,
+  validates queue and size limits, creates a queued job, and returns `202`.
 - `GET /api/jobs/:jobId` returns safe public status, progress, email status, and public errors.
 - `GET /api/download/:token` streams a ready ZIP while the signed email credential is valid.
 - `POST /api/jobs/:jobId/download` accepts the same-tab browser access credential in the request
@@ -51,12 +52,14 @@ This version requires embedded chapter metadata. Files without valid embedded ch
 `NO_CHAPTERS_FOUND`. Silence detection, AI detection, manual chapter editing, accounts, external
 object storage, Redis, and multi-node workers are intentionally out of scope.
 
-The worker uses `ffprobe` to validate media, chapters, codec, and container, then `ffmpeg` to copy
-the first audio stream into one ordered file per chapter. MP3 audio in an MP3 container produces
-`.mp3` chapter files. AAC audio in an MP4/M4B-style container produces `.m4a` chapter files.
-Chapter files explicitly drop inherited chapter tables, non-audio streams, cover-art video,
-subtitles, data streams, inherited title metadata, and unsupported stream layouts. Chapter
-filenames are sanitized and duplicate names are made deterministic.
+The worker uses `ffprobe` to validate media, chapters, codec, and container, then `ffmpeg` to write
+the first audio stream into one ordered file per chapter in the job's requested output format
+(`.mp3` or `.m4b`). When the source codec already matches the requested format (MP3 for `.mp3`,
+AAC for `.m4b`) the audio is stream-copied without re-encoding; otherwise each chapter is
+re-encoded (libmp3lame or aac at 128 kbps). Chapter files explicitly drop inherited chapter
+tables, non-audio streams, cover-art video, subtitles, data streams, inherited title metadata,
+and unsupported stream layouts. Chapter filenames are sanitized and duplicate names are made
+deterministic.
 
 After ZIP creation succeeds, the source file and intermediate chapter files are deleted. The ZIP
 remains available until the configured retention period expires.

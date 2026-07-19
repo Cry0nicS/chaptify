@@ -124,7 +124,7 @@ const assertContainerPathMissing = (path) => {
 };
 
 const generateSyntheticAudiobook = async (root, format) => {
-    const basePath = join(root, `base.${format === "mp3" ? "mp3" : "m4a"}`);
+    const basePath = join(root, `base.${format}`);
     const metadataPath = join(root, "chapters.ffmetadata");
     const outputPath = join(root, `synthetic.${format}`);
 
@@ -259,11 +259,14 @@ const probeChapter = (path) =>
         ])
     );
 
-const uploadAudiobook = async (path, format) => {
+const uploadAudiobook = async (path, format, outputFormat) => {
     const form = new FormData();
     const bytes = await readFile(path);
     form.append("file", new Blob([bytes]), `synthetic.${format}`);
     form.append("email", "docker-smoke@example.test");
+    if (outputFormat) {
+        form.append("outputFormat", outputFormat);
+    }
     const response = await fetch(`${apiBaseUrl}/api/jobs`, {
         method: "POST",
         body: form
@@ -396,11 +399,11 @@ const waitForCleanupHeartbeatChange = async () => {
     throw new Error("Cleanup heartbeat did not advance");
 };
 
-const createReadyJob = async (root, format) => {
+const createReadyJob = async (root, format, outputFormat) => {
     const sourcePath = await generateSyntheticAudiobook(root, format);
 
     run("docker", ["compose", "stop", "worker"]);
-    const created = await uploadAudiobook(sourcePath, format);
+    const created = await uploadAudiobook(sourcePath, format, outputFormat);
     const queuedStatus = await fetchJobStatus(created.jobId);
     if (queuedStatus.status !== "queued") {
         throw new Error(`Expected ${format} job to be queued before worker restart`);
@@ -428,9 +431,15 @@ const createReadyJob = async (root, format) => {
     return {created, status, job};
 };
 
-const runFormatWorkflow = async (root, format) => {
-    console.log(`Running Docker end-to-end workflow for ${format}`);
-    const {created, status, job} = await createReadyJob(root, format);
+const runFormatWorkflow = async (root, format, outputFormat) => {
+    // When outputFormat differs from the uploaded format, the worker re-encodes rather than
+    // stream-copying; this exercises that path against the real Alpine-image ffmpeg.
+    const chosenOutput = outputFormat ?? format;
+    const label = outputFormat ? `${format}-to-${outputFormat}` : format;
+    const expectedExtension = chosenOutput;
+    const expectedCodec = chosenOutput === "mp3" ? "mp3" : "aac";
+    console.log(`Running Docker end-to-end workflow for ${label}`);
+    const {created, status, job} = await createReadyJob(root, format, outputFormat);
 
     const readyReservations = queryDatabase(
         "SELECT * FROM storage_reservations WHERE owner_id = ? AND released_at IS NULL",
@@ -450,21 +459,21 @@ const runFormatWorkflow = async (root, format) => {
         throw new Error(`ZIP download failed with ${downloadResponse.status}`);
     }
 
-    const zipPath = join(root, `${format}.zip`);
+    const zipPath = join(root, `${label}.zip`);
     await writeFile(zipPath, Buffer.from(await downloadResponse.arrayBuffer()));
     if ((await readFile(zipPath)).length === 0) {
         throw new Error("Downloaded ZIP was empty");
     }
 
-    const extractedDirectory = join(root, `${format}-extracted`);
+    const extractedDirectory = join(root, `${label}-extracted`);
     const entries = await extractZip(zipPath, extractedDirectory);
-    const expectedNames =
-        format === "mp3"
-            ? ["01 - Intro One.mp3", "02 - Second Part.mp3"]
-            : ["01 - Intro One.m4a", "02 - Second Part.m4a"];
+    const expectedNames = [
+        `01 - Intro One.${expectedExtension}`,
+        `02 - Second Part.${expectedExtension}`
+    ];
     const names = entries.map((entry) => entry.name);
     if (JSON.stringify(names) !== JSON.stringify(expectedNames)) {
-        throw new Error(`Unexpected ZIP entries for ${format}: ${names.join(", ")}`);
+        throw new Error(`Unexpected ZIP entries for ${label}: ${names.join(", ")}`);
     }
 
     for (const [index, entry] of entries.entries()) {
@@ -476,6 +485,12 @@ const runFormatWorkflow = async (root, format) => {
 
         if (audioStreams.length !== 1 || nonAudioStreams.length !== 0) {
             throw new Error(`Unexpected stream layout in ${entry.name}`);
+        }
+
+        if (audioStreams[0]?.codec_name !== expectedCodec) {
+            throw new Error(
+                `Unexpected codec in ${entry.name}: ${audioStreams[0]?.codec_name} (expected ${expectedCodec})`
+            );
         }
 
         if ((probed.chapters || []).length !== 0) {
@@ -641,8 +656,15 @@ try {
 
     const root = await mkdtemp(join(tmpdir(), "chaptify-docker-smoke-"));
     try {
-        for (const format of ["mp3", "m4b"]) {
-            await runFormatWorkflow(root, format);
+        // Same-format runs stream-copy; the cross-format runs re-encode (mp3<->aac) so the
+        // Alpine-image encoders (libmp3lame/aac) are exercised end-to-end.
+        for (const [format, outputFormat] of [
+            ["mp3", undefined],
+            ["m4b", undefined],
+            ["mp3", "m4b"],
+            ["m4b", "mp3"]
+        ]) {
+            await runFormatWorkflow(root, format, outputFormat);
         }
         await runWorkerRestartEmailWorkflow(root, mailgunMock);
     } finally {

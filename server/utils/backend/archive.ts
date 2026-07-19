@@ -14,7 +14,10 @@ export interface CreateChapterZipOptions {
  * Streams chapter files into the final ZIP archive under the job output directory.
  *
  * The archive is finalized through the output stream instead of buffering file contents in memory.
- * Empty or partially-created archives are deleted before surfacing a public ZIP failure.
+ * `statConcurrency: 1` forces archiver to stat and append entries serially so the ZIP preserves the
+ * caller's chapter order; with the default concurrent stat, a smaller/faster chapter can overtake a
+ * larger earlier one and land out of order in the archive. Empty or partially-created archives are
+ * deleted before surfacing a public ZIP failure.
  */
 export const createChapterZip = async (
     storageRoot: string,
@@ -27,7 +30,7 @@ export const createChapterZip = async (
 
     try {
         await new Promise<void>((resolve, reject) => {
-            const archive = new ZipArchive({zlib: {level: 9}});
+            const archive = new ZipArchive({zlib: {level: 9}, statConcurrency: 1});
             const output = createWriteStream(zipPath, {mode: 0o600});
             let settled = false;
 

@@ -241,6 +241,7 @@ export const processJob = async (
             job.sourcePath,
             chaptersDirectory,
             inspection,
+            job.outputFormat,
             (currentChapter, totalChapters) => {
                 const progress = 20 + Math.floor((currentChapter / totalChapters) * 55);
                 jobs.updateProgress(job.internalId, progress, currentChapter, totalChapters);
