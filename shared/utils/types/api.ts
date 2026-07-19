@@ -3,6 +3,7 @@ import type {
     browserDownloadGrantResponseSchema,
     browserDownloadRequestSchema,
     jobStatusResponseSchema,
+    outputFormatSchema,
     publicEmailStatusSchema,
     publicJobStatusSchema,
     publicProcessingErrorCodeSchema,
@@ -10,6 +11,8 @@ import type {
     uploadJobResponseSchema,
     uploadMetadataSchema
 } from "../schemas/api";
+
+export type OutputFormat = z.infer<typeof outputFormatSchema>;
 
 export type PublicJobStatus = z.infer<typeof publicJobStatusSchema>;
 export type PublicEmailStatus = z.infer<typeof publicEmailStatusSchema>;

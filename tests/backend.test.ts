@@ -127,6 +127,7 @@ const createQueuedJob = (jobs: ReturnType<typeof createJobRepository>, storageRo
         internalId: "internal-job-id",
         displayFilename: "Book.m4b",
         sourceFormat: "m4b",
+        outputFormat: "m4b",
         fileSize: 100,
         email: "reader@example.test",
         sourcePath: join(storageRoot, "jobs", "internal-job-id", "source", "source.m4b"),
@@ -231,7 +232,7 @@ const probeMedia = async (path: string) => {
     );
 
     return JSON.parse(result.stdout) as {
-        streams: Array<{codec_type?: string}>;
+        streams: Array<{codec_type?: string; codec_name?: string}>;
         chapters?: unknown[];
         format: {duration?: string; tags?: Record<string, string>};
     };
@@ -272,9 +273,10 @@ describe("public validation and filenames", () => {
                 email: "reader@example.test",
                 fileName: "book.mp3",
                 fileSize: 1,
-                extension: "mp3"
+                extension: "mp3",
+                outputFormat: "m4b"
             })
-        ).toMatchObject({extension: "mp3"});
+        ).toMatchObject({extension: "mp3", outputFormat: "m4b"});
         expect(() =>
             uploadMetadataSchema.parse({
                 email: "not-an-email",
@@ -288,10 +290,10 @@ describe("public validation and filenames", () => {
     it("sanitizes filenames and handles duplicate chapter names deterministically", () => {
         expect(sanitizeDisplayFilename("../CON")).toBe("audiobook");
         expect(sanitizeChapterTitle("Intro/Start", "Chapter 01")).toBe("Intro Start");
-        expect(buildChapterFilenames(["Intro", "Intro", ""], "m4a")).toEqual([
-            "01 - Intro.m4a",
-            "02 - Intro (2).m4a",
-            "03 - Chapter 03.m4a"
+        expect(buildChapterFilenames(["Intro", "Intro", ""], "m4b")).toEqual([
+            "01 - Intro.m4b",
+            "02 - Intro (2).m4b",
+            "03 - Chapter 03.m4b"
         ]);
     });
 
@@ -419,25 +421,33 @@ describe("chapter metadata", () => {
 
 describe("synthetic ffmpeg end-to-end media", () => {
     it.each([
-        ["mp3", "mp3"],
-        ["m4b", "m4a"]
+        // input, chosen output format, expected chapter extension, expected codec (copy or re-encode)
+        ["mp3", "mp3", "mp3", "mp3"],
+        ["m4b", "m4b", "m4b", "aac"],
+        ["mp3", "m4b", "m4b", "aac"],
+        ["m4b", "mp3", "mp3", "mp3"]
     ] as const)(
-        "splits a generated %s audiobook into validated chapter outputs",
-        async (inputFormat, outputExtension) => {
+        "splits a generated %s audiobook to %s chapter outputs",
+        async (inputFormat, outputFormat, outputExtension, expectedCodec) => {
             const root = await makeStorageRoot();
             const sourcePath = await createSyntheticAudiobook(root, inputFormat);
             const inspection = await inspectAudioFile(sourcePath, inputFormat);
-            const chaptersDirectory = join(root, "jobs", `${inputFormat}-split`, "chapters");
+            const chaptersDirectory = join(
+                root,
+                "jobs",
+                `${inputFormat}-to-${outputFormat}`,
+                "chapters"
+            );
             const completed: Array<[number, number]> = [];
 
             expect(inspection.chapters).toHaveLength(2);
-            expect(inspection.outputExtension).toBe(outputExtension);
 
             const chapterPaths = await splitChapters(
                 root,
                 sourcePath,
                 chaptersDirectory,
                 inspection,
+                outputFormat,
                 (current, total) => completed.push([current, total])
             );
 
@@ -461,6 +471,7 @@ describe("synthetic ffmpeg end-to-end media", () => {
                 const tags = probed.format.tags || {};
 
                 expect(audioStreams).toHaveLength(1);
+                expect(audioStreams[0]?.codec_name).toBe(expectedCodec);
                 expect(nonAudioStreams).toHaveLength(0);
                 expect(probed.chapters || []).toHaveLength(0);
                 expect(Number(probed.format.duration)).toBeGreaterThan(1.5);
@@ -487,6 +498,7 @@ describe("synthetic ffmpeg end-to-end media", () => {
                 internalId: `${inputFormat}-job`,
                 displayFilename: `Synthetic.${inputFormat}`,
                 sourceFormat: inputFormat,
+                outputFormat: inputFormat,
                 fileSize: (await stat(sourcePath)).size,
                 email: "reader@example.test",
                 sourcePath,
@@ -515,7 +527,7 @@ describe("synthetic ffmpeg end-to-end media", () => {
             expect(await listZipEntries(ready.zipPath)).toEqual(
                 inputFormat === "mp3"
                     ? ["01 - Intro One.mp3", "02 - Second Part.mp3"]
-                    : ["01 - Intro One.m4a", "02 - Second Part.m4a"]
+                    : ["01 - Intro One.m4b", "02 - Second Part.m4b"]
             );
 
             const signed = createSignedDownloadToken({
@@ -628,7 +640,7 @@ describe("tokens and persistence", () => {
         const chaptersDirectory = join(storageRoot, "jobs", "internal-job-id", "chapters");
         const outputDirectory = join(storageRoot, "jobs", "internal-job-id", "output");
         const sourcePath = join(sourceDirectory, "source.m4b");
-        const chapterPath = join(chaptersDirectory, "partial.m4a");
+        const chapterPath = join(chaptersDirectory, "partial.m4b");
         const outputPath = join(outputDirectory, "partial.zip");
         await mkdir(sourceDirectory, {recursive: true});
         await mkdir(chaptersDirectory, {recursive: true});
@@ -674,11 +686,10 @@ describe("tokens and persistence", () => {
                 duration: 2,
                 audioCodec: "aac",
                 chapters: [{title: "Intro", start: 0, end: 2}],
-                outputExtension: "m4a",
                 bookTitle: null
             }),
             splitChapters: async (_root, _source, chaptersDirectory) => {
-                const chapterPath = join(chaptersDirectory, "01 - Intro.m4a");
+                const chapterPath = join(chaptersDirectory, "01 - Intro.m4b");
                 await writeFile(chapterPath, "chapter");
 
                 return [chapterPath];
@@ -725,11 +736,10 @@ describe("tokens and persistence", () => {
                 duration: 2,
                 audioCodec: "aac",
                 chapters: [{title: "Intro", start: 0, end: 2}],
-                outputExtension: "m4a",
                 bookTitle: null
             }),
             splitChapters: async (_root, _source, chaptersDirectory) => {
-                const chapterPath = join(chaptersDirectory, "01 - Intro.m4a");
+                const chapterPath = join(chaptersDirectory, "01 - Intro.m4b");
                 await writeFile(chapterPath, "chapter");
 
                 return [chapterPath];
@@ -775,11 +785,10 @@ describe("tokens and persistence", () => {
                 duration: 2,
                 audioCodec: "aac",
                 chapters: [{title: "Intro", start: 0, end: 2}],
-                outputExtension: "m4a",
                 bookTitle: null
             }),
             splitChapters: async (_root, _source, chaptersDirectory) => {
-                const chapterPath = join(chaptersDirectory, "01 - Intro.m4a");
+                const chapterPath = join(chaptersDirectory, "01 - Intro.m4b");
                 await writeFile(chapterPath, "chapter");
 
                 return [chapterPath];
@@ -838,11 +847,10 @@ describe("tokens and persistence", () => {
                     duration: 2,
                     audioCodec: "aac",
                     chapters: [{title: "Intro", start: 0, end: 2}],
-                    outputExtension: "m4a",
                     bookTitle: null
                 }),
                 splitChapters: async (_root, _source, chaptersDirectory) => {
-                    const chapterPath = join(chaptersDirectory, "01 - Intro.m4a");
+                    const chapterPath = join(chaptersDirectory, "01 - Intro.m4b");
                     await writeFile(chapterPath, "chapter");
 
                     return [chapterPath];
@@ -1432,6 +1440,7 @@ describe("worker shutdown and failure handling", () => {
             internalId: "shutdown-job",
             displayFilename: "Book.m4b",
             sourceFormat: "m4b",
+            outputFormat: "m4b",
             fileSize: 100,
             email: "reader@example.test",
             sourcePath: join(storageRoot, "jobs", "shutdown-job", "source", "source.m4b"),

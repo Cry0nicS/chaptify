@@ -1,9 +1,32 @@
+import type {OutputFormat} from "../../../shared/utils/types";
 import {mkdir, rm, stat} from "node:fs/promises";
 import {join} from "node:path";
 import {z} from "zod";
 import {PublicJobError} from "./errors";
 import {buildChapterFilenames, ensurePathInside} from "./paths";
 import {runProcess} from "./process";
+
+/**
+ * Per output-format encoding plan. `codec` is the ffprobe codec name a source must already have for
+ * a stream copy; when the source codec differs, the chapter is re-encoded with `encodeArgs`.
+ */
+const OUTPUT_SPECS: Record<
+    OutputFormat,
+    {codec: string; extension: "mp3" | "m4b"; encodeArgs: string[]; muxArgs: string[]}
+> = {
+    mp3: {
+        codec: "mp3",
+        extension: "mp3",
+        encodeArgs: ["-c:a", "libmp3lame", "-b:a", "128k"],
+        muxArgs: []
+    },
+    m4b: {
+        codec: "aac",
+        extension: "m4b",
+        encodeArgs: ["-c:a", "aac", "-b:a", "128k"],
+        muxArgs: ["-movflags", "+faststart"]
+    }
+};
 
 const DEFAULT_MEDIA_LIMITS = {
     maxAudiobookDurationSeconds: 86_400,
@@ -56,7 +79,6 @@ export interface MediaInspection {
     duration: number;
     audioCodec: string;
     chapters: ChapterInfo[];
-    outputExtension: "mp3" | "m4a";
     bookTitle: string | null;
 }
 
@@ -82,21 +104,22 @@ const remainingTimeoutMs = (timeoutMs: number, deadlineMs?: number): number => {
     return Math.min(timeoutMs, remaining);
 };
 
-const chooseOutputExtension = (
-    audioCodec: string,
-    formatName: string | undefined
-): "mp3" | "m4a" => {
+/**
+ * Rejects uploads whose codec/container combination Chaptify does not process. Only MP3 audio in an
+ * MP3 container and AAC audio in an MP4/M4B-style container are accepted as split sources.
+ */
+const assertSupportedInput = (audioCodec: string, formatName: string | undefined): void => {
     const formats = new Set((formatName || "").split(","));
 
     if (audioCodec === "mp3" && formats.has("mp3")) {
-        return "mp3";
+        return;
     }
 
     if (
         audioCodec === "aac" &&
         ["mov", "mp4", "m4a", "3gp", "3g2", "mj2"].some((name) => formats.has(name))
     ) {
-        return "m4a";
+        return;
     }
 
     throw new PublicJobError(
@@ -137,8 +160,8 @@ export const validateChapters = (chapters: ChapterInfo[], duration: number): voi
  * Reads trusted media facts from ffprobe and converts them to Chaptify's processing plan.
  *
  * The first audio stream determines whether the file is processable, while embedded chapters are
- * the only supported split source. The output extension follows the uploaded container because
- * chapter splitting uses stream copy instead of re-encoding.
+ * the only supported split source. The probed audio codec later decides whether `splitChapters`
+ * can stream-copy into the requested output format or must re-encode.
  */
 export const inspectAudioFile = async (
     sourcePath: string,
@@ -204,6 +227,7 @@ export const inspectAudioFile = async (
     }));
 
     validateChapters(chapters, parsed.format.duration);
+    assertSupportedInput(audioStream.codec_name, parsed.format.format_name);
     const bookTitle =
         typeof parsed.format.tags?.title === "string" && parsed.format.tags.title.trim()
             ? parsed.format.tags.title.trim()
@@ -213,7 +237,6 @@ export const inspectAudioFile = async (
         duration: parsed.format.duration,
         audioCodec: audioStream.codec_name,
         chapters,
-        outputExtension: chooseOutputExtension(audioStream.codec_name, parsed.format.format_name),
         bookTitle
     };
 };
@@ -268,29 +291,34 @@ const verifyChapterOutput = async (
 };
 
 /**
- * Stream-copies one output file per validated chapter.
+ * Writes one output file per validated chapter in the requested output format.
  *
  * FFmpeg receives an argument array, maps only the first audio stream, and drops video, subtitle,
- * and data streams from chapter files. Each chapter is cut with a fast input-side `-ss` seek plus an
- * explicit output-side `-t` duration (`end - start`) rather than `-to`, whose meaning as an input
- * option is FFmpeg-version-dependent; this keeps chapter lengths stable across builds. If any
- * chapter fails or produces an empty file, all partial chapter output is removed before the public
- * processing failure is reported.
+ * and data streams from chapter files. When the source codec already matches the requested format
+ * the audio is stream-copied; otherwise it is re-encoded (mp3 <-> aac). Each chapter is cut with a
+ * fast input-side `-ss` seek plus an explicit output-side `-t` duration (`end - start`) rather than
+ * `-to`, whose meaning as an input option is FFmpeg-version-dependent; this keeps chapter lengths
+ * stable across builds. If any chapter fails or produces an empty file, all partial chapter output
+ * is removed before the public processing failure is reported.
  */
 export const splitChapters = async (
     storageRoot: string,
     sourcePath: string,
     chaptersDirectory: string,
     inspection: MediaInspection,
+    outputFormat: OutputFormat,
     onChapterComplete: (currentChapter: number, totalChapters: number) => void,
     options: MediaProcessingOptions = {}
 ): Promise<string[]> => {
     const limits = limitsWithDefaults(options);
+    const spec = OUTPUT_SPECS[outputFormat];
+    const streamCopy = inspection.audioCodec === spec.codec;
+    const codecArgs = streamCopy ? ["-c:a", "copy"] : spec.encodeArgs;
     const safeChapterDirectory = ensurePathInside(storageRoot, chaptersDirectory);
     await mkdir(safeChapterDirectory, {recursive: true, mode: 0o700});
     const filenames = buildChapterFilenames(
         inspection.chapters.map((chapter) => chapter.title),
-        inspection.outputExtension
+        spec.extension
     );
     const outputPaths: string[] = [];
 
@@ -304,7 +332,7 @@ export const splitChapters = async (
             const outputPath = ensurePathInside(storageRoot, join(safeChapterDirectory, filename));
             const chapterTitle = filename.slice(
                 filename.indexOf(" - ") + 3,
-                -`.${inspection.outputExtension}`.length
+                -`.${spec.extension}`.length
             );
             const track = `${index + 1}/${inspection.chapters.length}`;
             const metadataArgs = inspection.bookTitle
@@ -339,8 +367,8 @@ export const splitChapters = async (
                         "-vn",
                         "-sn",
                         "-dn",
-                        "-c:a",
-                        "copy",
+                        ...codecArgs,
+                        ...spec.muxArgs,
                         "-metadata",
                         `title=${chapterTitle}`,
                         "-metadata",

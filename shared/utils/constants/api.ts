@@ -2,6 +2,8 @@ export const PUBLIC_JOB_STATUSES = ["queued", "processing", "ready", "failed", "
 
 export const PUBLIC_EMAIL_STATUSES = ["pending", "sent", "failed"] as const;
 
+export const OUTPUT_FORMATS = ["mp3", "m4b"] as const;
+
 export const PUBLIC_PROCESSING_ERROR_CODES = [
     "UNSUPPORTED_FILE_TYPE",
     "FILE_TOO_LARGE",

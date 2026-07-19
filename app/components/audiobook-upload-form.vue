@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type {OutputFormat} from "#shared/utils/types";
 import type {FileValidationResult} from "../utils/file-validation";
 import {computed, ref} from "vue";
 import {validateEmailAddress} from "../utils/email";
@@ -7,6 +8,7 @@ import {validateAudiobookFile} from "../utils/file-validation";
 const props = defineProps<{
     file: File | null;
     email: string;
+    outputFormat: OutputFormat;
     disabled?: boolean;
     isUploading?: boolean;
     uploadProgressLabel?: string;
@@ -15,10 +17,22 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     "update:email": [value: string];
+    "update:outputFormat": [value: OutputFormat];
     "fileSelected": [file: File];
     "fileRemoved": [];
     "submit": [];
 }>();
+
+const outputFormatItems = [
+    {label: "MP3", value: "mp3"},
+    {label: "M4B", value: "m4b"}
+];
+
+const onOutputFormatChange = (value: unknown) => {
+    if (value === "mp3" || value === "m4b") {
+        emit("update:outputFormat", value);
+    }
+};
 
 const fileInput = ref<HTMLInputElement | null>(null);
 const isDragActive = ref(false);
@@ -170,6 +184,23 @@ defineExpose({
                 class="text-error text-sm"
                 role="alert">
                 {{ fileError || fileValidation.message }}
+            </p>
+        </div>
+
+        <div class="space-y-2">
+            <span class="text-highlighted block text-sm font-medium">Output format</span>
+            <URadioGroup
+                :model-value="outputFormat"
+                :items="outputFormatItems"
+                orientation="horizontal"
+                :disabled="disabled || isUploading"
+                aria-describedby="output-format-help"
+                @update:model-value="onOutputFormatChange" />
+            <p
+                id="output-format-help"
+                class="text-muted text-sm">
+                The format for the chapter files. If it differs from the uploaded audiobook,
+                Chaptify re-encodes the audio, which takes a little longer.
             </p>
         </div>
 

@@ -45,7 +45,7 @@ export const sanitizeChapterTitle = (
 
 export const buildChapterFilenames = (
     titles: Array<string | null | undefined>,
-    extension: "mp3" | "m4a"
+    extension: "mp3" | "m4b"
 ): string[] => {
     const width = Math.max(2, String(titles.length).length);
     const seen = new Map<string, number>();

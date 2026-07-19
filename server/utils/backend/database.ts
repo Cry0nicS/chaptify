@@ -14,6 +14,7 @@ export interface JobRecord {
     internalId: string;
     displayFilename: string;
     sourceFormat: "mp3" | "m4b";
+    outputFormat: "mp3" | "m4b";
     fileSize: number;
     email: string | null;
     status: PublicJobStatus;
@@ -44,6 +45,7 @@ export interface CreateJobInput {
     internalId: string;
     displayFilename: string;
     sourceFormat: "mp3" | "m4b";
+    outputFormat: "mp3" | "m4b";
     fileSize: number;
     email: string;
     sourcePath: string;
@@ -74,6 +76,7 @@ const rowToJob = (row: Record<string, unknown>): JobRecord => ({
     internalId: String(row.internal_id),
     displayFilename: String(row.display_filename),
     sourceFormat: row.source_format as "mp3" | "m4b",
+    outputFormat: (row.output_format ?? row.source_format) as "mp3" | "m4b",
     fileSize: Number(row.file_size),
     email: row.email === null ? null : String(row.email),
     status: row.status as PublicJobStatus,
@@ -140,6 +143,7 @@ export const openDatabase = (storageRoot: string): Database.Database => {
             internal_id TEXT NOT NULL UNIQUE,
             display_filename TEXT NOT NULL,
             source_format TEXT NOT NULL,
+            output_format TEXT,
             file_size INTEGER NOT NULL,
             email TEXT,
             status TEXT NOT NULL,
@@ -190,6 +194,7 @@ export const openDatabase = (storageRoot: string): Database.Database => {
         "browser_job_access_token_hash",
         "browser_job_access_token_hash TEXT"
     );
+    ensureColumn(database, "jobs", "output_format", "output_format TEXT");
     ensureColumn(database, "jobs", "email_next_attempt_at", "email_next_attempt_at TEXT");
     ensureColumn(database, "jobs", "email_last_error", "email_last_error TEXT");
     ensureColumn(database, "jobs", "email_message_id", "email_message_id TEXT");
@@ -249,6 +254,7 @@ export const createJobRepository = (database: Database.Database) => {
                         internal_id,
                         display_filename,
                         source_format,
+                        output_format,
                         file_size,
                         email,
                         status,
@@ -258,7 +264,7 @@ export const createJobRepository = (database: Database.Database) => {
                         source_path,
                         browser_job_access_token_hash
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?)
                 `
                 )
                 .run(
@@ -266,6 +272,7 @@ export const createJobRepository = (database: Database.Database) => {
                     input.internalId,
                     input.displayFilename,
                     input.sourceFormat,
+                    input.outputFormat,
                     input.fileSize,
                     input.email,
                     input.createdAt,
@@ -416,6 +423,7 @@ export const createJobRepository = (database: Database.Database) => {
                             internal_id,
                             display_filename,
                             source_format,
+                            output_format,
                             file_size,
                             email,
                             status,
@@ -425,7 +433,7 @@ export const createJobRepository = (database: Database.Database) => {
                             source_path,
                             browser_job_access_token_hash
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?)
                     `
                     )
                     .run(
@@ -433,6 +441,7 @@ export const createJobRepository = (database: Database.Database) => {
                         input.internalId,
                         input.displayFilename,
                         input.sourceFormat,
+                        input.outputFormat,
                         input.fileSize,
                         input.email,
                         input.createdAt,
