@@ -15,13 +15,12 @@ const {navigationItems} = useNavItems();
             body: 'flex justify-center text-2xl'
         }">
         <template #title>
-            <ColorScheme
-                placeholder="chaptify"
-                tag="span">
-                <ClientOnly>
-                    <AppLogo class="h-10 w-auto" />
-                </ClientOnly>
-            </ColorScheme>
+            <span class="flex items-center gap-2.5">
+                <AppLogo class="h-9 w-auto" />
+                <span class="font-display text-highlighted text-xl font-bold tracking-tight">
+                    Chaptify
+                </span>
+            </span>
         </template>
 
         <UNavigationMenu

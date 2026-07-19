@@ -24,7 +24,7 @@ const extension = computed(() => getAudiobookExtension(props.file.name)?.toUpper
                     :title="file.name">
                     {{ file.name }}
                 </p>
-                <p class="text-muted mt-1 text-sm">
+                <p class="text-muted mt-1 font-mono text-xs tracking-wide">
                     {{ formatFileSize(file.size) }} · {{ extension }}
                 </p>
             </div>

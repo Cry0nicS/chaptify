@@ -296,24 +296,23 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="mx-auto max-w-3xl py-8 sm:py-12">
-        <section class="mb-8 space-y-4">
-            <UBadge
-                color="primary"
-                variant="soft"
-                icon="i-lucide-headphones">
-                M4B and MP3
-            </UBadge>
-            <div class="space-y-3">
-                <h1 class="text-highlighted text-3xl font-semibold tracking-normal sm:text-4xl">
-                    Split your audiobook into chapters
-                </h1>
-                <p class="text-muted max-w-2xl text-base sm:text-lg">
-                    Upload one M4B or MP3 audiobook. Chaptify will split it into individual chapter
-                    files, package them as a ZIP, and email you a temporary download link.
-                </p>
-            </div>
+    <div class="mx-auto max-w-3xl py-10 sm:py-16">
+        <section class="mb-10 space-y-5">
+            <p class="text-primary font-mono text-xs tracking-[0.25em] uppercase">
+                M4B · MP3 · Embedded chapters
+            </p>
+            <h1
+                class="font-display text-highlighted text-4xl font-bold tracking-tight text-balance sm:text-6xl">
+                One audiobook in. Every chapter out.
+            </h1>
+            <p class="text-muted max-w-2xl text-base sm:text-lg">
+                Chaptify splits a single audiobook into per-chapter files, zips them, and emails you
+                a temporary download link. Built for watches and small players that choke on one big
+                file.
+            </p>
         </section>
+
+        <ChapterWaveform class="mb-10" />
 
         <div class="space-y-6">
             <UCard>
@@ -321,7 +320,7 @@ onBeforeUnmount(() => {
                     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                             <h2 class="text-highlighted text-lg font-semibold">
-                                Process audiobook
+                                Split your audiobook
                             </h2>
                             <p class="text-muted text-sm">Embedded chapter metadata is required.</p>
                         </div>
@@ -430,5 +429,68 @@ onBeforeUnmount(() => {
                 </UButton>
             </div>
         </div>
+
+        <section
+            class="border-default mt-16 border-t pt-10"
+            aria-labelledby="how-it-works">
+            <h2
+                id="how-it-works"
+                class="font-display text-highlighted text-2xl font-bold tracking-tight">
+                How it works
+            </h2>
+            <div class="mt-6 grid gap-8 sm:grid-cols-3">
+                <div class="space-y-2">
+                    <p class="text-primary font-mono text-xs tracking-widest">CH 01 · UPLOAD</p>
+                    <h3 class="text-highlighted font-semibold">One file, one email</h3>
+                    <p class="text-muted text-sm">
+                        Drop in an M4B or MP3 you own, pick the output format, and leave an email
+                        address for the download link.
+                    </p>
+                </div>
+                <div class="space-y-2">
+                    <p class="text-primary font-mono text-xs tracking-widest">CH 02 · SPLIT</p>
+                    <h3 class="text-highlighted font-semibold">Cut at every chapter</h3>
+                    <p class="text-muted text-sm">
+                        Chaptify reads the chapter marks embedded in the file and cuts the audio at
+                        each one — no guessing, no silence detection.
+                    </p>
+                </div>
+                <div class="space-y-2">
+                    <p class="text-primary font-mono text-xs tracking-widest">CH 03 · LISTEN</p>
+                    <h3 class="text-highlighted font-semibold">Sync and go</h3>
+                    <p class="text-muted text-sm">
+                        You get a ZIP of chapter files by email. Sync them to your watch or player.
+                        Link and files delete themselves after 12 hours.
+                    </p>
+                </div>
+            </div>
+            <div class="border-primary/25 bg-primary/5 mt-10 rounded-lg border p-6 sm:p-8">
+                <p class="text-primary font-mono text-xs tracking-widest">CH 04 · YOUR TURN</p>
+                <h3 class="font-display text-highlighted mt-2 text-xl font-bold tracking-tight">
+                    Help write the next chapter
+                </h3>
+                <p class="text-muted mt-2 max-w-xl text-sm">
+                    Chaptify improves through the people who use it. If a feature is missing or
+                    something didn't split the way it should, a short message steers what gets built
+                    next.
+                </p>
+                <UButton
+                    class="mt-4"
+                    to="/contact"
+                    variant="soft"
+                    icon="i-lucide-message-square-plus">
+                    Suggest a feature or report a bug
+                </UButton>
+            </div>
+
+            <p class="text-muted mt-8 text-sm">
+                Built by a marathon runner whose watch refused to play one big file.
+                <ULink
+                    class="text-primary font-medium"
+                    to="/about">
+                    Read the story
+                </ULink>
+            </p>
+        </section>
     </div>
 </template>

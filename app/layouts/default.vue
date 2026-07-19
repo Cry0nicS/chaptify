@@ -12,14 +12,6 @@ const {navigationItems} = useNavItems();
             </UContainer>
         </UMain>
 
-        <ClientOnly>
-            <USeparator
-                :avatar="{
-                    src: '/favicon.ico',
-                    loading: 'lazy'
-                }" />
-        </ClientOnly>
-
         <NavFooter>
             <template #links>
                 <UNavigationMenu

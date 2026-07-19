@@ -49,7 +49,9 @@ const statusMessage = computed(() => {
                 <h2 class="text-highlighted text-lg font-semibold">{{ statusTitle }}</h2>
                 <p class="text-muted text-sm">{{ statusMessage }}</p>
             </div>
-            <p class="text-highlighted text-2xl font-semibold">{{ displayProgress }}%</p>
+            <p class="text-highlighted font-mono text-2xl font-semibold tabular-nums">
+                {{ displayProgress }}%
+            </p>
         </div>
 
         <UProgress

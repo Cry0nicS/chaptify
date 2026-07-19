@@ -241,7 +241,9 @@ defineExpose({
             aria-live="polite">
             <div class="flex items-center justify-between gap-4">
                 <p class="text-highlighted text-sm font-medium">Uploading audiobook</p>
-                <p class="text-muted text-sm">{{ uploadProgressPercent }}%</p>
+                <p class="text-muted font-mono text-sm tabular-nums">
+                    {{ uploadProgressPercent }}%
+                </p>
             </div>
             <UProgress
                 :model-value="uploadProgressPercent"

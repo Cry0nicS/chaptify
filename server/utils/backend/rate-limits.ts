@@ -26,6 +26,7 @@ const SWEEP_INTERVAL_MS = 60_000;
 const uploadCounters = new Map<string, WindowCounter>();
 const jobCounters = new Map<string, WindowCounter>();
 const downloadCounters = new Map<string, WindowCounter>();
+const contactCounters = new Map<string, WindowCounter>();
 const lastSweepAt = new WeakMap<Map<string, WindowCounter>, number>();
 
 let activeUploads = 0;
@@ -342,9 +343,13 @@ export const checkJobCreationLimit = (ip: string, limit: number, windowMs: numbe
 export const checkDownloadRateLimit = (ip: string, limit: number, windowMs: number): boolean =>
     incrementWindow(downloadCounters, ip, limit, windowMs);
 
+export const checkContactRateLimit = (ip: string, limit: number, windowMs: number): boolean =>
+    incrementWindow(contactCounters, ip, limit, windowMs);
+
 export const resetRateLimitsForTests = () => {
     uploadCounters.clear();
     jobCounters.clear();
     downloadCounters.clear();
+    contactCounters.clear();
     activeUploads = 0;
 };
