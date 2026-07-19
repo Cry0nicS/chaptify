@@ -115,6 +115,8 @@ const assertSupportedInput = (audioCodec: string, formatName: string | undefined
         return;
     }
 
+    // ffprobe reports every MP4-family container (including .m4b) with the shared demuxer name
+    // "mov,mp4,m4a,3gp,3g2,mj2"; these tokens match that string and are not file extensions.
     if (
         audioCodec === "aac" &&
         ["mov", "mp4", "m4a", "3gp", "3g2", "mj2"].some((name) => formats.has(name))
