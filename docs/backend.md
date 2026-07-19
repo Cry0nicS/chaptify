@@ -164,8 +164,7 @@ Operational defaults:
 - `NUXT_EMAIL_RETRY_MAX_DELAY_SECONDS=3600`
 - `NUXT_CONTACT_RATE_LIMIT=5`
 
-`NUXT_MAILGUN_BCC` is optional. `NUXT_MAILGUN_RECIPIENT` is preserved for compatibility with the
-existing configuration, but completion emails are sent to the email submitted with the upload.
+`NUXT_MAILGUN_BCC` is optional. Completion emails are sent to the email submitted with the upload.
 
 `NUXT_CONTACT_RECIPIENT` is the operator inbox that receives contact-form submissions. When it is
 unset, `POST /api/contact` fails with a generic delivery error and the rest of the app is

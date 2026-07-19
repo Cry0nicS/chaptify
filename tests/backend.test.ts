@@ -111,7 +111,6 @@ const makeConfig = (storageRoot: string): BackendConfig => ({
     mailgunDomain: "example.test",
     mailgunKey: "key-test",
     mailgunSender: "sender@example.test",
-    mailgunRecipient: "",
     mailgunBcc: "",
     contactRecipient: "operator@example.test",
     contactRateLimit: 5
@@ -337,8 +336,7 @@ describe("runtime environment loading", () => {
                 "NUXT_MAILGUN_BASE_URL=https://api.mailgun.test",
                 "NUXT_MAILGUN_DOMAIN=mg.example.test",
                 "NUXT_MAILGUN_KEY=key-from-file",
-                "NUXT_MAILGUN_SENDER=sender@example.test",
-                "NUXT_MAILGUN_RECIPIENT=recipient@example.test"
+                "NUXT_MAILGUN_SENDER=sender@example.test"
             ].join("\n")
         );
         const env: NodeJS.ProcessEnv = {

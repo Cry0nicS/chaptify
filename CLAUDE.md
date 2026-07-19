@@ -7,7 +7,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `AGENTS.md` — the authoritative, detailed convention guide (architecture rules, Nuxt/Vue/TypeScript/ESLint/Prettier conventions, security, Docker, completion requirements). Follow it. When it conflicts with the actual config files (`package.json`, `nuxt.config.ts`, `eslint.config.mjs`, `prettier.config.mjs`), the config files win.
 - `docs/backend.md` — API endpoints, job/email states, storage layout, cleanup, and the full list of `NUXT_*` environment variables with defaults.
 
-Note: `AGENTS.md` claims "No automated test command is currently defined." That is stale — `npm run test` (Vitest) now exists (see below).
 
 ## Commands
 

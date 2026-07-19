@@ -51,7 +51,6 @@ const runtimeConfigSchema = z.object({
     mailgunDomain: z.string().optional().default(""),
     mailgunKey: z.string().optional().default(""),
     mailgunSender: z.string().email().optional().or(z.literal("")),
-    mailgunRecipient: z.string().email().optional().or(z.literal("")),
     mailgunBcc: z.string().email().optional().or(z.literal("")),
     contactRecipient: z.string().email().optional().or(z.literal("")),
     contactRateLimit: numericEnvSchema(5, 1)
@@ -59,58 +58,33 @@ const runtimeConfigSchema = z.object({
 
 export type BackendConfig = z.infer<typeof runtimeConfigSchema>;
 
-/**
- * Reads backend configuration for the standalone worker process.
- *
- * The worker does not run inside Nuxt's runtime config container, so it depends on environment
- * variables loaded by the startup wrapper before this function is called.
- */
-export const getBackendConfigFromEnv = (): BackendConfig =>
-    runtimeConfigSchema.parse({
-        siteUrl: process.env.NUXT_SITE_URL || "http://localhost:3000",
-        storageRoot: process.env.NUXT_STORAGE_ROOT || DEFAULT_STORAGE_ROOT,
-        maxUploadBytes: process.env.NUXT_MAX_UPLOAD_BYTES,
-        maxQueuedJobs: process.env.NUXT_MAX_QUEUED_JOBS,
-        maxConcurrentUploads: process.env.NUXT_MAX_CONCURRENT_UPLOADS,
-        uploadIdleTimeoutSeconds: process.env.NUXT_UPLOAD_IDLE_TIMEOUT_SECONDS,
-        trustProxy: process.env.NUXT_TRUST_PROXY || "",
-        perIpUploadLimit: process.env.NUXT_PER_IP_UPLOAD_LIMIT,
-        perIpJobLimit: process.env.NUXT_PER_IP_JOB_LIMIT,
-        downloadRateLimit: process.env.NUXT_DOWNLOAD_RATE_LIMIT,
-        storageReservationMultiplier: process.env.NUXT_STORAGE_RESERVATION_MULTIPLIER,
-        storageReservationSafetyBytes: process.env.NUXT_STORAGE_RESERVATION_SAFETY_BYTES,
-        storageReservationTtlMinutes: process.env.NUXT_STORAGE_RESERVATION_TTL_MINUTES,
-        orphanJobDirectoryMinAgeMinutes: process.env.NUXT_ORPHAN_JOB_DIRECTORY_MIN_AGE_MINUTES,
-        cleanupIntervalSeconds: process.env.NUXT_CLEANUP_INTERVAL_SECONDS,
-        browserDownloadGrantLifetimeSeconds:
-            process.env.NUXT_BROWSER_DOWNLOAD_GRANT_LIFETIME_SECONDS,
-        browserDownloadGrantUsedGraceSeconds:
-            process.env.NUXT_BROWSER_DOWNLOAD_GRANT_USED_GRACE_SECONDS,
-        workerConcurrency: process.env.NUXT_WORKER_CONCURRENCY,
-        jobRetentionHours: process.env.NUXT_JOB_RETENTION_HOURS,
-        maxAudiobookDurationSeconds: process.env.NUXT_MAX_AUDIOBOOK_DURATION_SECONDS,
-        maxChapters: process.env.NUXT_MAX_CHAPTERS,
-        jobProcessingTimeoutSeconds: process.env.NUXT_JOB_PROCESSING_TIMEOUT_SECONDS,
-        ffprobeTimeoutSeconds: process.env.NUXT_FFPROBE_TIMEOUT_SECONDS,
-        ffmpegChapterTimeoutSeconds: process.env.NUXT_FFMPEG_CHAPTER_TIMEOUT_SECONDS,
-        emailRetryAttempts: process.env.NUXT_EMAIL_RETRY_ATTEMPTS,
-        downloadSigningSecret: process.env.NUXT_DOWNLOAD_SIGNING_SECRET || "",
-        emailRetryBaseDelaySeconds: process.env.NUXT_EMAIL_RETRY_BASE_DELAY_SECONDS,
-        emailRetryMaxDelaySeconds: process.env.NUXT_EMAIL_RETRY_MAX_DELAY_SECONDS,
-        mailgunBaseUrl: process.env.NUXT_MAILGUN_BASE_URL || "",
-        mailgunDomain: process.env.NUXT_MAILGUN_DOMAIN || "",
-        mailgunKey: process.env.NUXT_MAILGUN_KEY || "",
-        mailgunSender: process.env.NUXT_MAILGUN_SENDER || "",
-        mailgunRecipient: process.env.NUXT_MAILGUN_RECIPIENT || "",
-        mailgunBcc: process.env.NUXT_MAILGUN_BCC || "",
-        contactRecipient: process.env.NUXT_CONTACT_RECIPIENT || "",
-        contactRateLimit: process.env.NUXT_CONTACT_RATE_LIMIT
-    });
+const CONFIG_KEYS = Object.keys(runtimeConfigSchema.shape) as (keyof BackendConfig)[];
 
 /**
- * Reads backend configuration inside Nitro while preserving worker-compatible fallbacks.
- * Environment values can still override runtime config during Docker starts.
+ * Maps a camelCase config key to its environment variable, e.g. `maxUploadBytes` ->
+ * `NUXT_MAX_UPLOAD_BYTES`. This is the same convention Nuxt itself uses for runtimeConfig env
+ * overrides, so every key stays reachable under one predictable name in both runtimes.
  */
+const envVarName = (key: string): string =>
+    `NUXT_${key.replaceAll(/[A-Z]/g, (letter) => `_${letter}`).toUpperCase()}`;
+
+/**
+ * Fallbacks applied when neither runtime config nor the environment provides a value. Numeric
+ * keys are absent on purpose: `numericEnvSchema` already supplies their defaults during parsing.
+ */
+const CONFIG_FALLBACKS: Partial<Record<keyof BackendConfig, string>> = {
+    siteUrl: "http://localhost:3000",
+    storageRoot: DEFAULT_STORAGE_ROOT,
+    trustProxy: "",
+    downloadSigningSecret: "",
+    mailgunBaseUrl: "",
+    mailgunDomain: "",
+    mailgunKey: "",
+    mailgunSender: "",
+    mailgunBcc: "",
+    contactRecipient: ""
+};
+
 /**
  * Returns the first source value that is actually set.
  *
@@ -121,98 +95,34 @@ export const getBackendConfigFromEnv = (): BackendConfig =>
 const pick = (...values: unknown[]): unknown =>
     values.find((value) => value !== undefined && value !== null && value !== "");
 
-export const getBackendConfig = (): BackendConfig => {
-    const runtimeConfig = typeof useRuntimeConfig === "function" ? useRuntimeConfig() : {};
-    const values = runtimeConfig as Record<string, unknown>;
+const buildConfig = (runtimeValues: Record<string, unknown>): BackendConfig =>
+    runtimeConfigSchema.parse(
+        Object.fromEntries(
+            CONFIG_KEYS.map((key) => [
+                key,
+                pick(runtimeValues[key], process.env[envVarName(key)], CONFIG_FALLBACKS[key])
+            ])
+        )
+    );
 
-    return runtimeConfigSchema.parse({
-        siteUrl: pick(values.siteUrl, process.env.NUXT_SITE_URL, "http://localhost:3000"),
-        storageRoot: pick(values.storageRoot, process.env.NUXT_STORAGE_ROOT, DEFAULT_STORAGE_ROOT),
-        maxUploadBytes: pick(values.maxUploadBytes, process.env.NUXT_MAX_UPLOAD_BYTES),
-        maxQueuedJobs: pick(values.maxQueuedJobs, process.env.NUXT_MAX_QUEUED_JOBS),
-        maxConcurrentUploads: pick(
-            values.maxConcurrentUploads,
-            process.env.NUXT_MAX_CONCURRENT_UPLOADS
-        ),
-        uploadIdleTimeoutSeconds: pick(
-            values.uploadIdleTimeoutSeconds,
-            process.env.NUXT_UPLOAD_IDLE_TIMEOUT_SECONDS
-        ),
-        trustProxy: pick(values.trustProxy, process.env.NUXT_TRUST_PROXY, ""),
-        perIpUploadLimit: pick(values.perIpUploadLimit, process.env.NUXT_PER_IP_UPLOAD_LIMIT),
-        perIpJobLimit: pick(values.perIpJobLimit, process.env.NUXT_PER_IP_JOB_LIMIT),
-        downloadRateLimit: pick(values.downloadRateLimit, process.env.NUXT_DOWNLOAD_RATE_LIMIT),
-        storageReservationMultiplier: pick(
-            values.storageReservationMultiplier,
-            process.env.NUXT_STORAGE_RESERVATION_MULTIPLIER
-        ),
-        storageReservationSafetyBytes: pick(
-            values.storageReservationSafetyBytes,
-            process.env.NUXT_STORAGE_RESERVATION_SAFETY_BYTES
-        ),
-        storageReservationTtlMinutes: pick(
-            values.storageReservationTtlMinutes,
-            process.env.NUXT_STORAGE_RESERVATION_TTL_MINUTES
-        ),
-        orphanJobDirectoryMinAgeMinutes: pick(
-            values.orphanJobDirectoryMinAgeMinutes,
-            process.env.NUXT_ORPHAN_JOB_DIRECTORY_MIN_AGE_MINUTES
-        ),
-        cleanupIntervalSeconds: pick(
-            values.cleanupIntervalSeconds,
-            process.env.NUXT_CLEANUP_INTERVAL_SECONDS
-        ),
-        browserDownloadGrantLifetimeSeconds: pick(
-            values.browserDownloadGrantLifetimeSeconds,
-            process.env.NUXT_BROWSER_DOWNLOAD_GRANT_LIFETIME_SECONDS
-        ),
-        browserDownloadGrantUsedGraceSeconds: pick(
-            values.browserDownloadGrantUsedGraceSeconds,
-            process.env.NUXT_BROWSER_DOWNLOAD_GRANT_USED_GRACE_SECONDS
-        ),
-        workerConcurrency: pick(values.workerConcurrency, process.env.NUXT_WORKER_CONCURRENCY),
-        jobRetentionHours: pick(values.jobRetentionHours, process.env.NUXT_JOB_RETENTION_HOURS),
-        maxAudiobookDurationSeconds: pick(
-            values.maxAudiobookDurationSeconds,
-            process.env.NUXT_MAX_AUDIOBOOK_DURATION_SECONDS
-        ),
-        maxChapters: pick(values.maxChapters, process.env.NUXT_MAX_CHAPTERS),
-        jobProcessingTimeoutSeconds: pick(
-            values.jobProcessingTimeoutSeconds,
-            process.env.NUXT_JOB_PROCESSING_TIMEOUT_SECONDS
-        ),
-        ffprobeTimeoutSeconds: pick(
-            values.ffprobeTimeoutSeconds,
-            process.env.NUXT_FFPROBE_TIMEOUT_SECONDS
-        ),
-        ffmpegChapterTimeoutSeconds: pick(
-            values.ffmpegChapterTimeoutSeconds,
-            process.env.NUXT_FFMPEG_CHAPTER_TIMEOUT_SECONDS
-        ),
-        emailRetryAttempts: pick(values.emailRetryAttempts, process.env.NUXT_EMAIL_RETRY_ATTEMPTS),
-        downloadSigningSecret: pick(
-            values.downloadSigningSecret,
-            process.env.NUXT_DOWNLOAD_SIGNING_SECRET,
-            ""
-        ),
-        emailRetryBaseDelaySeconds: pick(
-            values.emailRetryBaseDelaySeconds,
-            process.env.NUXT_EMAIL_RETRY_BASE_DELAY_SECONDS
-        ),
-        emailRetryMaxDelaySeconds: pick(
-            values.emailRetryMaxDelaySeconds,
-            process.env.NUXT_EMAIL_RETRY_MAX_DELAY_SECONDS
-        ),
-        mailgunBaseUrl: pick(values.mailgunBaseUrl, process.env.NUXT_MAILGUN_BASE_URL, ""),
-        mailgunDomain: pick(values.mailgunDomain, process.env.NUXT_MAILGUN_DOMAIN, ""),
-        mailgunKey: pick(values.mailgunKey, process.env.NUXT_MAILGUN_KEY, ""),
-        mailgunSender: pick(values.mailgunSender, process.env.NUXT_MAILGUN_SENDER, ""),
-        mailgunRecipient: pick(values.mailgunRecipient, process.env.NUXT_MAILGUN_RECIPIENT, ""),
-        mailgunBcc: pick(values.mailgunBcc, process.env.NUXT_MAILGUN_BCC, ""),
-        contactRecipient: pick(values.contactRecipient, process.env.NUXT_CONTACT_RECIPIENT, ""),
-        contactRateLimit: pick(values.contactRateLimit, process.env.NUXT_CONTACT_RATE_LIMIT)
-    });
-};
+/**
+ * Reads backend configuration for the standalone worker/cleanup processes.
+ *
+ * These do not run inside Nuxt's runtime config container, so they depend on environment
+ * variables (loaded from `.env` by `loadDotenv` when present) at the time this is called.
+ */
+export const getBackendConfigFromEnv = (): BackendConfig => buildConfig({});
+
+/**
+ * Reads backend configuration inside Nitro while preserving worker-compatible env fallbacks, so
+ * environment values can still override runtime config during Docker starts.
+ */
+export const getBackendConfig = (): BackendConfig =>
+    buildConfig(
+        typeof useRuntimeConfig === "function"
+            ? (useRuntimeConfig() as Record<string, unknown>)
+            : {}
+    );
 
 export const normalizeBaseUrl = (baseUrl: string): string => baseUrl.replace(/\/+$/, "");
 

@@ -35,7 +35,6 @@ services:
             NUXT_MAILGUN_DOMAIN: ${NUXT_MAILGUN_DOMAIN:-}
             NUXT_MAILGUN_KEY: ${NUXT_MAILGUN_KEY:-}
             NUXT_MAILGUN_SENDER: ${NUXT_MAILGUN_SENDER:-}
-            NUXT_MAILGUN_RECIPIENT: ${NUXT_MAILGUN_RECIPIENT:-}
             NUXT_MAILGUN_BCC: ${NUXT_MAILGUN_BCC:-}
         volumes:
             - chaptify-storage:/data/chaptify

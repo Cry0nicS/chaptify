@@ -82,7 +82,7 @@ Nuxt UI is the primary component system.
 - Avoid scoped CSS unless Nuxt UI and Tailwind cannot reasonably express the required behavior.
 - Do not add another UI framework.
 - Preserve responsive behavior and accessibility.
-- Use `@nuxtjs/device` only when device-aware behavior is genuinely required. Prefer responsive CSS when presentation alone can solve the problem.
+- Prefer responsive CSS for device-aware presentation. Do not add a device-detection module unless behavior (not styling) genuinely requires it.
 
 Use Iconify icons through Nuxt UI:
 
@@ -206,12 +206,9 @@ The project currently defines these server-only runtime values:
 - `NUXT_MAILGUN_DOMAIN`
 - `NUXT_MAILGUN_KEY`
 - `NUXT_MAILGUN_SENDER`
-- `NUXT_MAILGUN_RECIPIENT`
 - `NUXT_MAILGUN_BCC`
 
-The public runtime configuration currently defines:
-
-- `NUXT_PUBLIC_NODE_ENV`
+No public runtime configuration (`runtimeConfig.public`) is currently defined.
 
 Rules:
 
@@ -356,7 +353,9 @@ Use `npm run generate` only for features compatible with static generation. Serv
 
 ## Testing and verification
 
-No automated test command is currently defined in `package.json`. Do not claim that tests passed unless a test framework and script exist and were run.
+`npm run test` runs the Vitest suite (`tests/backend.test.ts`, `tests/frontend.test.ts`). The
+synthetic media tests require `ffmpeg`/`ffprobe` on the PATH. Do not claim that tests passed
+unless they were actually run.
 
 Before completing a normal code change, run:
 
