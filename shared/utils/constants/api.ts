@@ -18,3 +18,11 @@ export const PUBLIC_PROCESSING_ERROR_CODES = [
 ] as const;
 
 export const DEFAULT_JOB_RETENTION_HOURS = 12;
+
+export const CONTACT_TOPICS = ["feature", "bug", "other"] as const;
+
+export const CONTACT_NAME_MAX_LENGTH = 100;
+
+export const CONTACT_MESSAGE_MIN_LENGTH = 10;
+
+export const CONTACT_MESSAGE_MAX_LENGTH = 4000;

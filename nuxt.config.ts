@@ -60,6 +60,8 @@ export default defineNuxtConfig({
         mailgunSender: process.env.NUXT_MAILGUN_SENDER || "",
         mailgunRecipient: process.env.NUXT_MAILGUN_RECIPIENT || "",
         mailgunBcc: process.env.NUXT_MAILGUN_BCC || "",
+        contactRecipient: process.env.NUXT_CONTACT_RECIPIENT || "",
+        contactRateLimit: "5",
         public: {
             nodeEnv: process.env.NUXT_PUBLIC_NODE_ENV || "development"
         }

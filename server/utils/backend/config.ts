@@ -52,7 +52,9 @@ const runtimeConfigSchema = z.object({
     mailgunKey: z.string().optional().default(""),
     mailgunSender: z.string().email().optional().or(z.literal("")),
     mailgunRecipient: z.string().email().optional().or(z.literal("")),
-    mailgunBcc: z.string().email().optional().or(z.literal(""))
+    mailgunBcc: z.string().email().optional().or(z.literal("")),
+    contactRecipient: z.string().email().optional().or(z.literal("")),
+    contactRateLimit: numericEnvSchema(5, 1)
 });
 
 export type BackendConfig = z.infer<typeof runtimeConfigSchema>;
@@ -103,7 +105,9 @@ export const getBackendConfigFromEnv = (): BackendConfig =>
         mailgunKey: process.env.NUXT_MAILGUN_KEY || "",
         mailgunSender: process.env.NUXT_MAILGUN_SENDER || "",
         mailgunRecipient: process.env.NUXT_MAILGUN_RECIPIENT || "",
-        mailgunBcc: process.env.NUXT_MAILGUN_BCC || ""
+        mailgunBcc: process.env.NUXT_MAILGUN_BCC || "",
+        contactRecipient: process.env.NUXT_CONTACT_RECIPIENT || "",
+        contactRateLimit: process.env.NUXT_CONTACT_RATE_LIMIT
     });
 
 /**
@@ -214,7 +218,9 @@ export const getBackendConfig = (): BackendConfig => {
         mailgunKey: pick(values.mailgunKey, process.env.NUXT_MAILGUN_KEY, ""),
         mailgunSender: pick(values.mailgunSender, process.env.NUXT_MAILGUN_SENDER, ""),
         mailgunRecipient: pick(values.mailgunRecipient, process.env.NUXT_MAILGUN_RECIPIENT, ""),
-        mailgunBcc: pick(values.mailgunBcc, process.env.NUXT_MAILGUN_BCC, "")
+        mailgunBcc: pick(values.mailgunBcc, process.env.NUXT_MAILGUN_BCC, ""),
+        contactRecipient: pick(values.contactRecipient, process.env.NUXT_CONTACT_RECIPIENT, ""),
+        contactRateLimit: pick(values.contactRateLimit, process.env.NUXT_CONTACT_RATE_LIMIT)
     });
 };
 

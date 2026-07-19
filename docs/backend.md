@@ -31,6 +31,9 @@ The storage root must be writable by both API and worker. It is never served sta
 - `POST /api/jobs/:jobId/download` accepts the same-tab browser access credential in the request
   body and streams the ready ZIP as an attachment.
 - `GET /api/health` verifies API runtime, SQLite access, and writable storage.
+- `POST /api/contact` validates a contact-form submission (name, email, topic, message) and
+  forwards it via Mailgun to `NUXT_CONTACT_RECIPIENT` with the sender's address as Reply-To.
+  Nothing is persisted; the route is rate limited per IP (`NUXT_CONTACT_RATE_LIMIT` per hour).
 
 The status endpoint never returns download tokens, submitted email addresses, internal paths, or
 provider diagnostics.
@@ -159,9 +162,14 @@ Operational defaults:
 - `NUXT_EMAIL_RETRY_ATTEMPTS=3`
 - `NUXT_EMAIL_RETRY_BASE_DELAY_SECONDS=60`
 - `NUXT_EMAIL_RETRY_MAX_DELAY_SECONDS=3600`
+- `NUXT_CONTACT_RATE_LIMIT=5`
 
 `NUXT_MAILGUN_BCC` is optional. `NUXT_MAILGUN_RECIPIENT` is preserved for compatibility with the
 existing configuration, but completion emails are sent to the email submitted with the upload.
+
+`NUXT_CONTACT_RECIPIENT` is the operator inbox that receives contact-form submissions. When it is
+unset, `POST /api/contact` fails with a generic delivery error and the rest of the app is
+unaffected.
 
 `NUXT_APP_BASE_URL` also matches a Nuxt-reserved runtime name. Production starts should use
 `npm run api:start` or the Docker command from this project; the wrapper preserves the value for

@@ -1,3 +1,4 @@
+import type {ContactTopic} from "../../../shared/utils/types";
 import type {BackendConfig} from "./config";
 import Mailgun from "mailgun.js";
 
@@ -6,6 +7,19 @@ export interface MailgunSendInput {
     downloadUrl: string;
     expiresInHours: number;
 }
+
+export interface ContactEmailInput {
+    name: string;
+    replyTo: string;
+    topic: ContactTopic;
+    message: string;
+}
+
+const CONTACT_TOPIC_LABELS: Record<ContactTopic, string> = {
+    feature: "Feature suggestion",
+    bug: "Bug report",
+    other: "Other"
+};
 
 const maskEmail = (email: string): string => {
     const [local, domain] = email.split("@");
@@ -89,6 +103,49 @@ export const createMailgunService = (config: BackendConfig) => {
             } catch (error) {
                 throw new Error(
                     `Mailgun delivery failed for ${maskEmail(input.to)}: ${String(error)}`
+                );
+            }
+        },
+
+        /**
+         * Sends a contact-form submission to the operator inbox (`contactRecipient`).
+         *
+         * The body is text-only: the message is untrusted user input and must never be rendered
+         * as HTML. The sender's address appears only in Reply-To (schema-validated, so it cannot
+         * smuggle header line breaks); the subject is built purely from a fixed topic label.
+         */
+        async sendContactEmail(input: ContactEmailInput): Promise<void> {
+            if (!client || !config.mailgunSender) {
+                throw new Error("Mailgun is not configured");
+            }
+
+            if (!config.contactRecipient) {
+                throw new Error("Contact recipient is not configured");
+            }
+
+            const topicLabel = CONTACT_TOPIC_LABELS[input.topic];
+            const text = [
+                `From: ${input.name}`,
+                `Email: ${input.replyTo}`,
+                `Topic: ${topicLabel}`,
+                "",
+                input.message
+            ].join("\n");
+
+            try {
+                await withTimeout(
+                    client.messages.create(config.mailgunDomain, {
+                        "from": config.mailgunSender,
+                        "to": config.contactRecipient,
+                        "h:Reply-To": input.replyTo,
+                        "subject": `Chaptify contact: ${topicLabel}`,
+                        text
+                    }),
+                    15_000
+                );
+            } catch (error) {
+                throw new Error(
+                    `Mailgun contact delivery failed from ${maskEmail(input.replyTo)}: ${String(error)}`
                 );
             }
         }

@@ -1,5 +1,9 @@
 import {z} from "zod";
 import {
+    CONTACT_MESSAGE_MAX_LENGTH,
+    CONTACT_MESSAGE_MIN_LENGTH,
+    CONTACT_NAME_MAX_LENGTH,
+    CONTACT_TOPICS,
     OUTPUT_FORMATS,
     PUBLIC_EMAIL_STATUSES,
     PUBLIC_JOB_STATUSES,
@@ -50,6 +54,27 @@ export const jobStatusResponseSchema = z.object({
     expiresAt: z.string().datetime().nullable(),
     emailStatus: publicEmailStatusSchema,
     error: publicProcessingErrorSchema.nullable()
+});
+
+export const contactTopicSchema = z.enum(CONTACT_TOPICS);
+
+export const contactRequestSchema = z.object({
+    name: z
+        .string()
+        .trim()
+        .min(1, "Enter your name.")
+        .max(CONTACT_NAME_MAX_LENGTH, "Please keep your name shorter."),
+    email: z.string().trim().email("Enter a valid email address.").max(320),
+    topic: z.enum(CONTACT_TOPICS, {message: "Pick a topic."}),
+    message: z
+        .string()
+        .trim()
+        .min(CONTACT_MESSAGE_MIN_LENGTH, "Tell us a bit more — at least 10 characters.")
+        .max(CONTACT_MESSAGE_MAX_LENGTH, "Please keep the message under 4000 characters.")
+});
+
+export const contactResponseSchema = z.object({
+    status: z.literal("sent")
 });
 
 export const uploadMetadataSchema = z.object({

@@ -464,6 +464,25 @@ onBeforeUnmount(() => {
                     </p>
                 </div>
             </div>
+            <div class="border-primary/25 bg-primary/5 mt-10 rounded-lg border p-6 sm:p-8">
+                <p class="text-primary font-mono text-xs tracking-widest">CH 04 · YOUR TURN</p>
+                <h3 class="font-display text-highlighted mt-2 text-xl font-bold tracking-tight">
+                    Help write the next chapter
+                </h3>
+                <p class="text-muted mt-2 max-w-xl text-sm">
+                    Chaptify improves through the people who use it. If a feature is missing or
+                    something didn't split the way it should, a short message steers what gets built
+                    next.
+                </p>
+                <UButton
+                    class="mt-4"
+                    to="/contact"
+                    variant="soft"
+                    icon="i-lucide-message-square-plus">
+                    Suggest a feature or report a bug
+                </UButton>
+            </div>
+
             <p class="text-muted mt-8 text-sm">
                 Built by a marathon runner whose watch refused to play one big file.
                 <ULink

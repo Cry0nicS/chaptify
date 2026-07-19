@@ -11,6 +11,11 @@ export const useNavItems = () => {
             label: "About",
             to: "/about",
             icon: "i-lucide-book-open"
+        },
+        {
+            label: "Contact",
+            to: "/contact",
+            icon: "i-lucide-mail"
         }
     ]);
 
