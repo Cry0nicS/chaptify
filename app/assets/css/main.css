@@ -2,17 +2,38 @@
 @import "@nuxt/ui";
 
 @theme static {
-    --font-sans: "Inter", sans-serif;
+    --font-sans: "Figtree", sans-serif;
+    --font-display: "Bricolage Grotesque", sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
 
-    --color-green-50: #effdf5;
-    --color-green-100: #d9fbe8;
-    --color-green-200: #b3f5d1;
-    --color-green-300: #75edae;
-    --color-green-400: #00dc82;
-    --color-green-500: #00c16a;
-    --color-green-600: #00a155;
-    --color-green-700: #007f45;
-    --color-green-800: #016538;
-    --color-green-900: #0a5331;
-    --color-green-950: #052e16;
+    /* "Iris" — primary ramp derived from the logo gradient (#168BFF → #7C3AED). */
+    --color-iris-50: #f0f2fe;
+    --color-iris-100: #e2e6fd;
+    --color-iris-200: #cad0fb;
+    --color-iris-300: #a8aef8;
+    --color-iris-400: #8688f2;
+    --color-iris-500: #6f66ea;
+    --color-iris-600: #5e48dd;
+    --color-iris-700: #5039c2;
+    --color-iris-800: #42309d;
+    --color-iris-900: #392e7d;
+    --color-iris-950: #221a49;
+
+    /* "Dusk" — violet-cast neutral so dark mode reads as night sky, not gray. */
+    --color-dusk-50: #f8f8fb;
+    --color-dusk-100: #f1f0f6;
+    --color-dusk-200: #e2e1ec;
+    --color-dusk-300: #cbc9db;
+    --color-dusk-400: #a5a2bd;
+    --color-dusk-500: #86829f;
+    --color-dusk-600: #6b6786;
+    --color-dusk-700: #57536d;
+    --color-dusk-800: #403d52;
+    --color-dusk-900: #2b2939;
+    --color-dusk-950: #17151f;
+}
+
+::selection {
+    background-color: var(--color-iris-500);
+    color: var(--color-iris-50);
 }

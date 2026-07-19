@@ -6,6 +6,11 @@ export const useNavItems = () => {
             label: "Home",
             to: "/",
             icon: "i-lucide-house"
+        },
+        {
+            label: "About",
+            to: "/about",
+            icon: "i-lucide-book-open"
         }
     ]);
 
