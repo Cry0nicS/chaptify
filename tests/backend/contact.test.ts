@@ -22,6 +22,21 @@ describe("contact form", () => {
         expect(parsed.message).toBe(
             "The waveform looks great, but M4B chapters with umlauts fail."
         );
+        // The honeypot defaults to empty so legitimate clients that omit it stay valid.
+        expect(parsed.website).toBe("");
+    });
+
+    it("accepts but flags a filled honeypot field", () => {
+        const parsed = contactRequestSchema.parse({
+            name: "Bot",
+            email: "bot@example.test",
+            topic: "other",
+            message: "Definitely a human message from a human.",
+            website: "https://spam.example"
+        });
+
+        // Parsing succeeds — the endpoint must be able to read the flag and silently discard.
+        expect(parsed.website).toBe("https://spam.example");
     });
 
     it("rejects invalid submissions", () => {

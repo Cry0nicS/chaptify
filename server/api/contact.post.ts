@@ -74,6 +74,13 @@ export default defineEventHandler(async (event) => {
         throw invalidRequestError();
     }
 
+    // Honeypot tripped: answer exactly like a success so bots cannot detect the filter, but do
+    // not send anything. The address is not logged — only the fact that the filter fired.
+    if (parsedBody.data.website) {
+        console.warn("Contact submission discarded by honeypot");
+        return {status: "sent" as const};
+    }
+
     const mailgun = createMailgunService(config);
 
     try {
