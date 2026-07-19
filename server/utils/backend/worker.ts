@@ -235,6 +235,12 @@ export const processJob = async (
 
         jobs.updateProgress(job.internalId, 10);
         const inspection = await inspectAudioFile(job.sourcePath, job.sourceFormat, mediaOptions);
+        jobs.recordHistoryInspection(job.publicJobId, {
+            durationSeconds: inspection.duration,
+            chapterCount: inspection.chapters.length,
+            author: inspection.author,
+            embeddedTitle: inspection.bookTitle
+        });
         jobs.updateProgress(job.internalId, 20, 0, inspection.chapters.length);
         const chapterPaths = await splitChapters(
             config.storageRoot,

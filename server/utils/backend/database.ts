@@ -53,6 +53,40 @@ export interface CreateJobInput {
     browserJobAccessTokenHash: string;
 }
 
+/**
+ * One permanent row per upload, kept for historical analysis.
+ *
+ * Unlike `jobs`, this table is never cleaned up or anonymized: it intentionally retains the
+ * inferred book name, the recipient email, and probed metadata after the operational job row has
+ * been scrubbed. Fields that could not be determined (e.g. metadata of a file that failed before
+ * probing) stay NULL so history can be filtered and sorted later.
+ */
+export interface UploadHistoryRecord {
+    id: number;
+    publicJobId: string;
+    bookTitle: string | null;
+    embeddedTitle: string | null;
+    author: string | null;
+    durationSeconds: number | null;
+    chapterCount: number | null;
+    fileSizeBytes: number;
+    sourceFormat: "mp3" | "m4b";
+    outputFormat: "mp3" | "m4b";
+    email: string;
+    status: PublicJobStatus;
+    emailStatus: PublicEmailStatus;
+    errorCode: PublicProcessingErrorCode | null;
+    uploadedAt: string;
+    completedAt: string | null;
+}
+
+export interface UploadHistoryInspectionInput {
+    durationSeconds: number;
+    chapterCount: number;
+    author: string | null;
+    embeddedTitle: string | null;
+}
+
 export interface StorageReservationInput {
     ownerId: string;
     reservedBytes: number;
@@ -109,6 +143,32 @@ const rowToJob = (row: Record<string, unknown>): JobRecord => ({
             ? null
             : String(row.browser_job_access_token_hash)
 });
+
+const rowToUploadHistory = (row: Record<string, unknown>): UploadHistoryRecord => ({
+    id: Number(row.id),
+    publicJobId: String(row.public_job_id),
+    bookTitle: row.book_title === null ? null : String(row.book_title),
+    embeddedTitle: row.embedded_title === null ? null : String(row.embedded_title),
+    author: row.author === null ? null : String(row.author),
+    durationSeconds: row.duration_seconds === null ? null : Number(row.duration_seconds),
+    chapterCount: row.chapter_count === null ? null : Number(row.chapter_count),
+    fileSizeBytes: Number(row.file_size_bytes),
+    sourceFormat: row.source_format as "mp3" | "m4b",
+    outputFormat: row.output_format as "mp3" | "m4b",
+    email: String(row.email),
+    status: row.status as PublicJobStatus,
+    emailStatus: row.email_status as PublicEmailStatus,
+    errorCode: row.error_code === null ? null : (row.error_code as PublicProcessingErrorCode),
+    uploadedAt: String(row.uploaded_at),
+    completedAt: row.completed_at === null ? null : String(row.completed_at)
+});
+
+/** Infers a human-readable book name from the uploaded filename by dropping the extension. */
+const inferBookTitle = (displayFilename: string): string | null => {
+    const withoutExtension = displayFilename.replace(/\.(mp3|m4b)$/i, "").trim();
+
+    return withoutExtension || null;
+};
 
 const ensureColumn = (database: Database.Database, table: string, column: string, ddl: string) => {
     const columns = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{
@@ -187,6 +247,25 @@ export const openDatabase = (storageRoot: string): Database.Database => {
             expires_at TEXT NOT NULL,
             used_at TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS upload_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            public_job_id TEXT NOT NULL UNIQUE,
+            book_title TEXT,
+            embedded_title TEXT,
+            author TEXT,
+            duration_seconds REAL,
+            chapter_count INTEGER,
+            file_size_bytes INTEGER NOT NULL,
+            source_format TEXT NOT NULL,
+            output_format TEXT NOT NULL,
+            email TEXT NOT NULL,
+            status TEXT NOT NULL,
+            email_status TEXT NOT NULL,
+            error_code TEXT,
+            uploaded_at TEXT NOT NULL,
+            completed_at TEXT
+        );
     `);
     ensureColumn(
         database,
@@ -230,6 +309,8 @@ export const openDatabase = (storageRoot: string): Database.Database => {
             ON browser_download_grants(public_job_id, internal_id);
         CREATE INDEX IF NOT EXISTS idx_browser_download_grants_retention
             ON browser_download_grants(expires_at, used_at, internal_id);
+        CREATE INDEX IF NOT EXISTS idx_upload_history_uploaded_at
+            ON upload_history(uploaded_at);
     `);
     sharedDatabase = database;
 
@@ -244,6 +325,75 @@ export const resetDatabaseForTests = () => {
 export const createJobRepository = (database: Database.Database) => {
     const getByPublicIdStatement = database.prepare("SELECT * FROM jobs WHERE public_job_id = ?");
     const getByInternalIdStatement = database.prepare("SELECT * FROM jobs WHERE internal_id = ?");
+    const insertHistoryStatement = database.prepare(
+        `
+        INSERT OR IGNORE INTO upload_history (
+            public_job_id,
+            book_title,
+            file_size_bytes,
+            source_format,
+            output_format,
+            email,
+            status,
+            email_status,
+            uploaded_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 'queued', 'pending', ?)
+    `
+    );
+    const syncHistoryStatement = database.prepare(
+        `
+        UPDATE upload_history
+        SET status = jobs.status,
+            email_status = jobs.email_status,
+            error_code = jobs.public_error_code,
+            completed_at = jobs.completed_at
+        FROM jobs
+        WHERE jobs.public_job_id = upload_history.public_job_id
+            AND (upload_history.status IS NOT jobs.status
+                OR upload_history.email_status IS NOT jobs.email_status
+                OR upload_history.error_code IS NOT jobs.public_error_code
+                OR upload_history.completed_at IS NOT jobs.completed_at)
+    `
+    );
+
+    /**
+     * History rows are bookkeeping: a write failure must never fail an upload or a job
+     * transition, so both helpers log and continue instead of throwing.
+     */
+    const recordHistoryCreated = (input: CreateJobInput) => {
+        try {
+            insertHistoryStatement.run(
+                input.publicJobId,
+                inferBookTitle(input.displayFilename),
+                input.fileSize,
+                input.sourceFormat,
+                input.outputFormat,
+                input.email,
+                input.createdAt
+            );
+        } catch (error) {
+            console.warn("Upload history insert skipped", {
+                publicJobId: input.publicJobId,
+                error: String(error)
+            });
+        }
+    };
+
+    /**
+     * Mirrors the live status, email status, error code, and completion time from `jobs` into
+     * `upload_history`. Running the mirror as one bulk statement after each transition keeps the
+     * history correct even for bulk job updates (e.g. `expirePendingEmails`), and the emails and
+     * titles captured at upload time are deliberately never overwritten by later anonymization.
+     */
+    const syncHistoryFromJobs = () => {
+        try {
+            syncHistoryStatement.run();
+        } catch (error) {
+            console.warn("Upload history sync skipped", {error: String(error)});
+        }
+    };
+
     return {
         createJob(input: CreateJobInput) {
             database
@@ -279,6 +429,7 @@ export const createJobRepository = (database: Database.Database) => {
                     input.sourcePath,
                     input.browserJobAccessTokenHash
                 );
+            recordHistoryCreated(input);
         },
 
         createStorageReservationIfCapacity(
@@ -452,7 +603,12 @@ export const createJobRepository = (database: Database.Database) => {
                 return true;
             });
 
-            return transaction();
+            const created = transaction();
+            if (created) {
+                recordHistoryCreated(input);
+            }
+
+            return created;
         },
 
         countQueuedJobs(): number {
@@ -658,6 +814,7 @@ export const createJobRepository = (database: Database.Database) => {
                 return null;
             }
 
+            syncHistoryFromJobs();
             const row = database.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as
                 Record<string, unknown> | undefined;
 
@@ -716,6 +873,7 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(publicErrorCode, publicError?.message || null, internalError, now, internalId);
+            syncHistoryFromJobs();
 
             return result.changes === 1;
         },
@@ -751,6 +909,7 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(completedAt, expiresAt, zipPath, tokenHash, completedAt, internalId);
+            syncHistoryFromJobs();
 
             return result.changes === 1;
         },
@@ -831,6 +990,7 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(now, null, internalId, now, leaseUntil);
+            syncHistoryFromJobs();
 
             return result.changes === 1;
         },
@@ -848,6 +1008,7 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(safeFailure, internalId);
+            syncHistoryFromJobs();
         },
 
         listReadyEmailJobsDue(now: string, limit: number): JobRecord[] {
@@ -886,6 +1047,7 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(now);
+            syncHistoryFromJobs();
         },
 
         /**
@@ -908,6 +1070,7 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run();
+            syncHistoryFromJobs();
         },
 
         listProcessingJobs(): JobRecord[] {
@@ -963,6 +1126,7 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(now, internalId);
+            syncHistoryFromJobs();
 
             return result.changes === 1;
         },
@@ -1013,6 +1177,52 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(internalId);
+        },
+
+        /**
+         * Enriches the history row with facts probed by the worker. Jobs that fail before the
+         * probe simply keep NULLs here, which is the filterable "not available" signal.
+         */
+        recordHistoryInspection(publicJobId: string, input: UploadHistoryInspectionInput) {
+            try {
+                database
+                    .prepare(
+                        `
+                        UPDATE upload_history
+                        SET duration_seconds = ?,
+                            chapter_count = ?,
+                            author = ?,
+                            embedded_title = ?
+                        WHERE public_job_id = ?
+                    `
+                    )
+                    .run(
+                        input.durationSeconds,
+                        input.chapterCount,
+                        input.author,
+                        input.embeddedTitle,
+                        publicJobId
+                    );
+            } catch (error) {
+                console.warn("Upload history inspection update skipped", {
+                    publicJobId,
+                    error: String(error)
+                });
+            }
+        },
+
+        listUploadHistory(limit = 100, offset = 0): UploadHistoryRecord[] {
+            const rows = database
+                .prepare(
+                    `
+                    SELECT * FROM upload_history
+                    ORDER BY uploaded_at DESC, id DESC
+                    LIMIT ? OFFSET ?
+                `
+                )
+                .all(limit, offset) as Array<Record<string, unknown>>;
+
+            return rows.map(rowToUploadHistory);
         }
     };
 };

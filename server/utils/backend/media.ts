@@ -80,7 +80,19 @@ export interface MediaInspection {
     audioCodec: string;
     chapters: ChapterInfo[];
     bookTitle: string | null;
+    author: string | null;
 }
+
+/** Reads a non-empty string tag case-insensitively; ffprobe tag casing varies by container. */
+const readFormatTag = (tags: Record<string, unknown> | undefined, name: string): string | null => {
+    for (const [key, value] of Object.entries(tags || {})) {
+        if (key.toLowerCase() === name && typeof value === "string" && value.trim()) {
+            return value.trim();
+        }
+    }
+
+    return null;
+};
 
 const limitsWithDefaults = (options: MediaProcessingOptions = {}) => ({
     maxAudiobookDurationSeconds:
@@ -230,16 +242,18 @@ export const inspectAudioFile = async (
 
     validateChapters(chapters, parsed.format.duration);
     assertSupportedInput(audioStream.codec_name, parsed.format.format_name);
-    const bookTitle =
-        typeof parsed.format.tags?.title === "string" && parsed.format.tags.title.trim()
-            ? parsed.format.tags.title.trim()
-            : null;
+    const bookTitle = readFormatTag(parsed.format.tags, "title");
+    const author =
+        readFormatTag(parsed.format.tags, "artist") ??
+        readFormatTag(parsed.format.tags, "album_artist") ??
+        readFormatTag(parsed.format.tags, "author");
 
     return {
         duration: parsed.format.duration,
         audioCodec: audioStream.codec_name,
         chapters,
-        bookTitle
+        bookTitle,
+        author
     };
 };
 

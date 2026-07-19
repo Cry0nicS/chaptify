@@ -49,6 +49,22 @@ Completion email delivery is at-least-once. If the worker exits after Mailgun ac
 before success is recorded, a later retry may send a duplicate email. Duplicate emails are safe
 because they point to the same logical signed download URL for the same ready job.
 
+## Upload History
+
+Every upload also inserts one permanent row into the `upload_history` SQLite table for
+operator-facing analysis (there is no public endpoint for it). Each row records the book name
+inferred from the uploaded filename, file size, source/output formats, the recipient email, the
+current processing and email statuses, the public error code for failures, and upload/completion
+timestamps. After the worker probes the file, the row is enriched with the total duration, the
+embedded chapter count, and the author/title tags when present; anything unavailable stays `NULL`
+so history can be filtered and sorted.
+
+Unlike the `jobs` table — which anonymizes emails and filenames as part of cleanup — upload
+history is intentionally never cleaned up or anonymized. It permanently retains uploader email
+addresses and book names, which is a deliberate retention/privacy trade-off; deleting rows by hand
+(or adding a retention job later) is the operator's call. History writes are best-effort
+bookkeeping: a failed history write logs a warning and never fails an upload or a job transition.
+
 ## Processing
 
 This version requires embedded chapter metadata. Files without valid embedded chapters fail with
