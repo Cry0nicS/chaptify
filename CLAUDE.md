@@ -15,7 +15,7 @@ npm run dev            # API + frontend (`nuxi dev`; loads .env natively)
 npm run worker:dev     # worker process, in a SECOND shell — required to process queued jobs
 npm run cleanup:dev    # run cleanup once
 
-npm run test           # Vitest (tests/backend.test.ts, tests/frontend.test.ts)
+npm run test           # Vitest (tests/backend/*.test.ts by scope, tests/frontend.test.ts)
 npm run lint           # ESLint
 npm run type-check     # nuxt typecheck (strict)
 npm run format         # Prettier --write
@@ -26,7 +26,7 @@ npm run api:start      # run built API (.output/start.mjs)
 npm run smoke:docker   # docker smoke test (scripts/docker-smoke.mjs)
 ```
 
-Run a single Vitest test: `npx vitest run tests/backend.test.ts` or filter by name with `npx vitest run -t "<name>"`.
+Run a single Vitest file: `npx vitest run tests/backend/<scope>.test.ts` or filter by name with `npx vitest run -t "<name>"`. Backend tests live in `tests/backend/` grouped by scope (persistence, mailgun, media, contact, ...), with shared fixtures in `tests/backend/helpers.ts` and the Mailgun module mock in `tests/backend/mailgun-mock.ts`.
 
 Before completing a change, run: `npm run format`, `npm run lint`, `npm run type-check`, `npm run build` (and `npm run test`). For Docker-related changes, also build/start the container.
 

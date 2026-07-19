@@ -353,7 +353,8 @@ Use `npm run generate` only for features compatible with static generation. Serv
 
 ## Testing and verification
 
-`npm run test` runs the Vitest suite (`tests/backend.test.ts`, `tests/frontend.test.ts`). The
+`npm run test` runs the Vitest suite (`tests/backend/*.test.ts` grouped by scope, plus
+`tests/frontend.test.ts`; shared backend fixtures live in `tests/backend/helpers.ts`). The
 synthetic media tests require `ffmpeg`/`ffprobe` on the PATH. Do not claim that tests passed
 unless they were actually run.
 
