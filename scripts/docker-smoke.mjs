@@ -598,7 +598,6 @@ process.env.NUXT_MAILGUN_BASE_URL = mailgunMock.baseUrl;
 process.env.NUXT_MAILGUN_DOMAIN = "mailgun-smoke.test";
 process.env.NUXT_MAILGUN_KEY = "mailgun-smoke-key";
 process.env.NUXT_MAILGUN_SENDER = "sender@mailgun-smoke.test";
-process.env.NUXT_MAILGUN_RECIPIENT = "";
 process.env.NUXT_MAILGUN_BCC = "";
 process.env.NUXT_CLEANUP_INTERVAL_SECONDS = "2";
 

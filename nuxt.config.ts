@@ -7,7 +7,7 @@ export default defineNuxtConfig({
         }
     },
 
-    modules: ["@nuxt/eslint", "@nuxt/ui", "@nuxtjs/device"],
+    modules: ["@nuxt/eslint", "@nuxt/ui"],
 
     // The server runs on Node 22 only; raise the Nitro esbuild target above es2019 so modern
     // syntax such as BigInt literals (used in IPv6 CIDR matching) is supported without warnings.
@@ -26,7 +26,9 @@ export default defineNuxtConfig({
     css: ["~/assets/css/main.css"],
 
     runtimeConfig: {
-        appBaseUrl: "http://localhost:3000",
+        // Public absolute origin used in emailed download links (NUXT_SITE_URL). Distinct from
+        // Nuxt's reserved NUXT_APP_BASE_URL, which is a route path prefix and stays untouched.
+        siteUrl: "http://localhost:3000",
         storageRoot: "",
         maxUploadBytes: "1610612736",
         maxQueuedJobs: "10",
@@ -58,13 +60,9 @@ export default defineNuxtConfig({
         mailgunDomain: process.env.NUXT_MAILGUN_DOMAIN || "",
         mailgunKey: process.env.NUXT_MAILGUN_KEY || "",
         mailgunSender: process.env.NUXT_MAILGUN_SENDER || "",
-        mailgunRecipient: process.env.NUXT_MAILGUN_RECIPIENT || "",
         mailgunBcc: process.env.NUXT_MAILGUN_BCC || "",
         contactRecipient: process.env.NUXT_CONTACT_RECIPIENT || "",
-        contactRateLimit: "5",
-        public: {
-            nodeEnv: process.env.NUXT_PUBLIC_NODE_ENV || "development"
-        }
+        contactRateLimit: "5"
     },
 
     colorMode: {

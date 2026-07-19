@@ -79,7 +79,7 @@ const makeStorageRoot = async () => {
 };
 
 const makeConfig = (storageRoot: string): BackendConfig => ({
-    appBaseUrl: "http://localhost:3000",
+    siteUrl: "http://localhost:3000",
     storageRoot,
     maxUploadBytes: 1024,
     maxQueuedJobs: 10,
@@ -111,7 +111,6 @@ const makeConfig = (storageRoot: string): BackendConfig => ({
     mailgunDomain: "example.test",
     mailgunKey: "key-test",
     mailgunSender: "sender@example.test",
-    mailgunRecipient: "",
     mailgunBcc: "",
     contactRecipient: "operator@example.test",
     contactRateLimit: 5
@@ -332,13 +331,12 @@ describe("runtime environment loading", () => {
         await writeFile(
             join(root, ".env"),
             [
-                "NUXT_APP_BASE_URL=https://example.test",
+                "NUXT_SITE_URL=https://example.test",
                 "NUXT_STORAGE_ROOT=/tmp/chaptify",
                 "NUXT_MAILGUN_BASE_URL=https://api.mailgun.test",
                 "NUXT_MAILGUN_DOMAIN=mg.example.test",
                 "NUXT_MAILGUN_KEY=key-from-file",
-                "NUXT_MAILGUN_SENDER=sender@example.test",
-                "NUXT_MAILGUN_RECIPIENT=recipient@example.test"
+                "NUXT_MAILGUN_SENDER=sender@example.test"
             ].join("\n")
         );
         const env: NodeJS.ProcessEnv = {
@@ -347,8 +345,7 @@ describe("runtime environment loading", () => {
 
         loadDotenv(root, env);
 
-        expect(env.CHAPTIFY_APP_BASE_URL).toBe("https://example.test");
-        expect(env.NUXT_APP_BASE_URL).toBeUndefined();
+        expect(env.NUXT_SITE_URL).toBe("https://example.test");
         expect(env.NUXT_MAILGUN_KEY).toBe("key-from-shell");
         expect(env.NUXT_MAILGUN_DOMAIN).toBe("mg.example.test");
     });
@@ -358,7 +355,7 @@ describe("runtime environment loading", () => {
         await writeFile(
             join(root, ".env"),
             [
-                "NUXT_APP_BASE_URL=https://example.test",
+                "NUXT_SITE_URL=https://example.test",
                 "NUXT_STORAGE_ROOT=/tmp/chaptify",
                 "NUXT_MAILGUN_BASE_URL=https://api.mailgun.test",
                 "NUXT_MAILGUN_DOMAIN=mg.example.test",
@@ -373,7 +370,7 @@ describe("runtime environment loading", () => {
             loadDotenv(root);
 
             expect(getBackendConfigFromEnv()).toMatchObject({
-                appBaseUrl: "https://example.test",
+                siteUrl: "https://example.test",
                 mailgunBaseUrl: "https://api.mailgun.test",
                 mailgunDomain: "mg.example.test",
                 mailgunKey: "key-test",
@@ -1542,7 +1539,7 @@ describe("production config validation", () => {
                 ...makeConfig("."),
                 downloadSigningSecret: "",
                 mailgunKey: "",
-                appBaseUrl: "http://localhost:3000"
+                siteUrl: "http://localhost:3000"
             })
         ).not.toThrow();
     });
@@ -1554,7 +1551,7 @@ describe("production config validation", () => {
             validateProductionConfig({
                 ...makeConfig("."),
                 downloadSigningSecret: "",
-                appBaseUrl: "http://localhost:3000"
+                siteUrl: "http://localhost:3000"
             })
         ).toThrow(/NUXT_DOWNLOAD_SIGNING_SECRET/);
     });
@@ -1565,7 +1562,7 @@ describe("production config validation", () => {
         expect(() =>
             validateProductionConfig({
                 ...makeConfig("."),
-                appBaseUrl: "https://chaptify.example"
+                siteUrl: "https://chaptify.example"
             })
         ).not.toThrow();
     });
@@ -1577,7 +1574,7 @@ describe("production config validation", () => {
         expect(() =>
             validateProductionConfig({
                 ...makeConfig("."),
-                appBaseUrl: "http://localhost:3000"
+                siteUrl: "http://localhost:3000"
             })
         ).not.toThrow();
     });
@@ -1586,7 +1583,7 @@ describe("production config validation", () => {
         process.env.NODE_ENV = "production";
         const withoutMailgun = {
             ...makeConfig("."),
-            appBaseUrl: "https://chaptify.example",
+            siteUrl: "https://chaptify.example",
             mailgunKey: "",
             mailgunDomain: "",
             mailgunSender: "",

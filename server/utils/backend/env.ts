@@ -68,23 +68,10 @@ export const parseDotenv = (contents: string): Record<string, string> => {
     return parsed;
 };
 
-export const normalizeChaptifyEnv = (env: WritableEnv = process.env) => {
-    const appBaseUrl = env.NUXT_APP_BASE_URL;
-
-    if (appBaseUrl && !env.CHAPTIFY_APP_BASE_URL) {
-        env.CHAPTIFY_APP_BASE_URL = appBaseUrl;
-    }
-
-    if (Object.hasOwn(env, "NUXT_APP_BASE_URL")) {
-        delete env.NUXT_APP_BASE_URL;
-    }
-};
-
 export const loadDotenv = (cwd = process.cwd(), env: WritableEnv = process.env) => {
     const envPath = resolve(cwd, ".env");
 
     if (!existsSync(envPath)) {
-        normalizeChaptifyEnv(env);
         return;
     }
 
@@ -95,6 +82,4 @@ export const loadDotenv = (cwd = process.cwd(), env: WritableEnv = process.env) 
             env[name] = value;
         }
     }
-
-    normalizeChaptifyEnv(env);
 };
