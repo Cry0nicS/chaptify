@@ -1,4 +1,4 @@
-import {mkdir, readdir, rm, stat} from "node:fs/promises";
+import {mkdir, rm, stat} from "node:fs/promises";
 import {join} from "node:path";
 import {z} from "zod";
 import {PublicJobError} from "./errors";
@@ -154,6 +154,10 @@ export const inspectAudioFile = async (
             [
                 "-v",
                 "error",
+                // Restrict to the local file protocol so a crafted upload (e.g. a disguised HLS or
+                // concat playlist) cannot make ffprobe open http/tcp/udp/ftp or other resources.
+                "-protocol_whitelist",
+                "file",
                 "-show_format",
                 "-show_streams",
                 "-show_chapters",
@@ -227,6 +231,8 @@ const verifyChapterOutput = async (
         [
             "-v",
             "error",
+            "-protocol_whitelist",
+            "file",
             "-show_format",
             "-show_streams",
             "-show_chapters",
@@ -265,8 +271,11 @@ const verifyChapterOutput = async (
  * Stream-copies one output file per validated chapter.
  *
  * FFmpeg receives an argument array, maps only the first audio stream, and drops video, subtitle,
- * and data streams from chapter files. If any chapter fails or produces an empty file, all partial
- * chapter output is removed before the public processing failure is reported.
+ * and data streams from chapter files. Each chapter is cut with a fast input-side `-ss` seek plus an
+ * explicit output-side `-t` duration (`end - start`) rather than `-to`, whose meaning as an input
+ * option is FFmpeg-version-dependent; this keeps chapter lengths stable across builds. If any
+ * chapter fails or produces an empty file, all partial chapter output is removed before the public
+ * processing failure is reported.
  */
 export const splitChapters = async (
     storageRoot: string,
@@ -301,46 +310,61 @@ export const splitChapters = async (
             const metadataArgs = inspection.bookTitle
                 ? ["-metadata", `album=${inspection.bookTitle}`]
                 : [];
-            remainingTimeoutMs(limits.ffmpegChapterTimeoutMs, options.deadlineMs);
-            await runProcess(
-                "ffmpeg",
-                [
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-y",
-                    "-ss",
-                    String(chapter.start),
-                    "-to",
-                    String(chapter.end),
-                    "-i",
-                    sourcePath,
-                    "-map",
-                    "0:a:0",
-                    "-map_chapters",
-                    "-1",
-                    "-map_metadata",
-                    "-1",
-                    "-vn",
-                    "-sn",
-                    "-dn",
-                    "-c:a",
-                    "copy",
-                    "-metadata",
-                    `title=${chapterTitle}`,
-                    "-metadata",
-                    `track=${track}`,
-                    ...metadataArgs,
-                    outputPath
-                ],
-                remainingTimeoutMs(limits.ffmpegChapterTimeoutMs, options.deadlineMs),
-                options.signal
-            );
-            const outputStats = await stat(outputPath);
-            if (outputStats.size === 0) {
-                throw new Error("Empty chapter output");
+
+            try {
+                await runProcess(
+                    "ffmpeg",
+                    [
+                        // Never read stdin, and restrict to the local file protocol so a crafted
+                        // input cannot make ffmpeg open external (http/tcp/udp/ftp/...) resources.
+                        "-nostdin",
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-protocol_whitelist",
+                        "file",
+                        "-ss",
+                        String(chapter.start),
+                        "-i",
+                        sourcePath,
+                        "-t",
+                        String(chapter.end - chapter.start),
+                        "-map",
+                        "0:a:0",
+                        "-map_chapters",
+                        "-1",
+                        "-map_metadata",
+                        "-1",
+                        "-vn",
+                        "-sn",
+                        "-dn",
+                        "-c:a",
+                        "copy",
+                        "-metadata",
+                        `title=${chapterTitle}`,
+                        "-metadata",
+                        `track=${track}`,
+                        ...metadataArgs,
+                        outputPath
+                    ],
+                    remainingTimeoutMs(limits.ffmpegChapterTimeoutMs, options.deadlineMs),
+                    options.signal
+                );
+                const outputStats = await stat(outputPath);
+                if (outputStats.size === 0) {
+                    throw new Error("Empty chapter output");
+                }
+                await verifyChapterOutput(outputPath, chapter, chapterTitle, track, options);
+            } catch (error) {
+                // Attach chapter context so a single bad boundary is diagnosable in internal logs
+                // instead of surfacing only as a blanket processing failure.
+                throw new Error(
+                    `Chapter ${track} "${chapterTitle}": ${
+                        error instanceof Error ? error.message : String(error)
+                    }`
+                );
             }
-            await verifyChapterOutput(outputPath, chapter, chapterTitle, track, options);
 
             outputPaths.push(outputPath);
             onChapterComplete(index + 1, inspection.chapters.length);
@@ -351,10 +375,4 @@ export const splitChapters = async (
     }
 
     return outputPaths;
-};
-
-export const listChapterFilesInOrder = async (chaptersDirectory: string): Promise<string[]> => {
-    const entries = await readdir(chaptersDirectory);
-
-    return entries.sort().map((entry) => join(chaptersDirectory, entry));
 };

@@ -667,17 +667,23 @@ export const createJobRepository = (database: Database.Database) => {
             currentChapter?: number,
             totalChapters?: number
         ) {
-            database
-                .prepare(
-                    `
+            try {
+                database
+                    .prepare(
+                        `
                     UPDATE jobs
                     SET progress = MAX(progress, ?),
                         current_chapter = COALESCE(?, current_chapter),
                         total_chapters = COALESCE(?, total_chapters)
                     WHERE internal_id = ? AND status = 'processing'
                 `
-                )
-                .run(progress, currentChapter ?? null, totalChapters ?? null, internalId);
+                    )
+                    .run(progress, currentChapter ?? null, totalChapters ?? null, internalId);
+            } catch (error) {
+                // Progress is cosmetic; a transient write failure (e.g. SQLITE_BUSY under contention)
+                // must never fail an otherwise-successful job.
+                console.warn("Progress update skipped", {internalId, error: String(error)});
+            }
         },
 
         markFailed(
@@ -740,6 +746,33 @@ export const createJobRepository = (database: Database.Database) => {
             return result.changes === 1;
         },
 
+        /**
+         * Atomically leases a ready job's completion email for delivery.
+         *
+         * Both the inline post-processing path and the periodic retry loop can select the same due
+         * job; this conditional update lets only one caller proceed by pushing `email_next_attempt_at`
+         * past `now`, so a concurrent claimer sees it as not-yet-due and backs off. A failed send
+         * overwrites the lease with the real backoff time, and a crash mid-send lets the lease expire
+         * so delivery is retried (delivery remains at-least-once).
+         */
+        claimEmailDelivery(internalId: string, now: string, leaseUntil: string): boolean {
+            const result = database
+                .prepare(
+                    `
+                    UPDATE jobs
+                    SET email_next_attempt_at = ?
+                    WHERE internal_id = ?
+                        AND status = 'ready'
+                        AND email_status = 'pending'
+                        AND email IS NOT NULL
+                        AND (email_next_attempt_at IS NULL OR email_next_attempt_at <= ?)
+                `
+                )
+                .run(leaseUntil, internalId, now);
+
+            return result.changes === 1;
+        },
+
         recordEmailAttempt(
             internalId: string,
             nextAttemptAt: string | null,
@@ -763,9 +796,14 @@ export const createJobRepository = (database: Database.Database) => {
          *
          * Processing readiness is independent of Mailgun delivery. Once delivery succeeds, the
          * address is no longer needed for retries and is removed from persistence.
+         *
+         * The update is conditional: it only applies while the job is still ready, unexpired,
+         * email-pending, and owns the given lease. If cleanup expired or anonymized the job during
+         * the Mailgun request, no row matches and `false` is returned so the caller does not report a
+         * delivery that points at an already-invalidated link.
          */
-        markEmailSent(internalId: string, now: string) {
-            database
+        markEmailSent(internalId: string, now: string, leaseUntil: string): boolean {
+            const result = database
                 .prepare(
                     `
                     UPDATE jobs
@@ -776,9 +814,16 @@ export const createJobRepository = (database: Database.Database) => {
                         email_last_error = NULL,
                         email_message_id = COALESCE(?, email_message_id)
                     WHERE internal_id = ?
+                        AND status = 'ready'
+                        AND email_status = 'pending'
+                        AND expires_at IS NOT NULL
+                        AND expires_at > ?
+                        AND email_next_attempt_at = ?
                 `
                 )
-                .run(now, null, internalId);
+                .run(now, null, internalId, now, leaseUntil);
+
+            return result.changes === 1;
         },
 
         markEmailFailed(internalId: string, safeFailure: string | null = null) {

@@ -16,6 +16,19 @@ import {ensurePathInside, jobDirectory} from "./paths";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * How long a claimed completion email is leased before another worker may retry it. Longer than the
+ * Mailgun request timeout so a normal send finishes first; a crash mid-send releases it afterwards.
+ */
+const EMAIL_SEND_LEASE_MS = 5 * 60_000;
+
+/**
+ * Minimum retention remaining before a completion email may be sent. Larger than the Mailgun
+ * request timeout so a link cannot be invalidated mid-send and so cleanup cannot expire the job
+ * while the send is in flight.
+ */
+const EMAIL_MIN_REMAINING_MS = 30_000;
+
 const safeDiagnostic = (error: unknown): string =>
     error instanceof Error ? error.name || "Error" : "Unknown error";
 
@@ -75,6 +88,11 @@ export interface ProcessJobDependencies {
     createChapterZip?: typeof createChapterZipDefault;
     deliverReadyEmail?: typeof deliverReadyEmail;
     beforeMarkReady?: () => Promise<void> | void;
+    /**
+     * External abort signal used by the worker loop to stop this job on shutdown. When it fires the
+     * job is treated as interrupted (left `processing` for recovery) rather than failed.
+     */
+    signal?: AbortSignal;
 }
 
 export const deliverReadyEmail = async (
@@ -101,8 +119,18 @@ export const deliverReadyEmail = async (
         return;
     }
 
-    if (new Date(job.expiresAt).getTime() <= Date.now()) {
-        jobs.markEmailFailed(job.internalId, "expired");
+    // Do not start a send when the job is at or near expiry: the link could be invalidated during
+    // the Mailgun request. Requiring EMAIL_MIN_REMAINING_MS (> the Mailgun timeout) of remaining
+    // life also guarantees cleanup cannot expire the job while this send is in flight.
+    if (new Date(job.expiresAt).getTime() <= Date.now() + EMAIL_MIN_REMAINING_MS) {
+        jobs.markEmailFailed(job.internalId, "expiring_soon");
+        return;
+    }
+
+    // Claim delivery atomically so the inline post-processing path and the retry loop cannot both
+    // send this job's email across the Mailgun await.
+    const leaseUntil = new Date(Date.now() + EMAIL_SEND_LEASE_MS).toISOString();
+    if (!jobs.claimEmailDelivery(job.internalId, new Date().toISOString(), leaseUntil)) {
         return;
     }
 
@@ -112,7 +140,14 @@ export const deliverReadyEmail = async (
             downloadUrl,
             expiresInHours: config.jobRetentionHours
         });
-        jobs.markEmailSent(job.internalId, new Date().toISOString());
+        // Only record success if the job is still ready, unexpired, email-pending, and owns this
+        // lease. If cleanup expired/anonymized it during the send, do not claim a valid delivery.
+        const marked = jobs.markEmailSent(job.internalId, new Date().toISOString(), leaseUntil);
+        if (!marked) {
+            console.warn("Completion email sent but job state changed before it was recorded", {
+                jobId: job.publicJobId
+            });
+        }
     } catch (error) {
         const attempt = job.emailAttempts + 1;
         const retryLimitReached = attempt >= config.emailRetryAttempts;
@@ -172,6 +207,13 @@ export const processJob = async (
     let outputDirectory: string | null = null;
     let readyTransitionSucceeded = false;
     const abortController = new AbortController();
+    const externalSignal = dependencies.signal;
+    const onExternalAbort = () => abortController.abort();
+    if (externalSignal?.aborted) {
+        abortController.abort();
+    } else {
+        externalSignal?.addEventListener("abort", onExternalAbort, {once: true});
+    }
     const deadlineMs = Date.now() + config.jobProcessingTimeoutSeconds * 1000;
     const deadlineTimer = setTimeout(() => {
         abortController.abort();
@@ -261,6 +303,22 @@ export const processJob = async (
             return;
         }
 
+        if (externalSignal?.aborted) {
+            // Worker shutdown aborted this job mid-flight. Leave it in 'processing' with its source
+            // intact so recoverInterruptedJobs requeues it on the next start instead of turning a
+            // routine restart into a permanent failure for the user.
+            console.warn("Job processing aborted for shutdown; deferring to recovery", {
+                jobId: job.publicJobId
+            });
+            await cleanupProcessingArtifacts(
+                job.internalId,
+                chaptersDirectory,
+                outputDirectory,
+                removePath
+            );
+            return;
+        }
+
         const publicError =
             error instanceof PublicJobError
                 ? error
@@ -282,6 +340,7 @@ export const processJob = async (
         }
     } finally {
         clearTimeout(deadlineTimer);
+        externalSignal?.removeEventListener("abort", onExternalAbort);
     }
 };
 
@@ -329,22 +388,35 @@ export const recoverInterruptedJobs = async (config: BackendConfig, jobs: JobRep
 export const runWorkerLoop = async (config: BackendConfig, jobs: JobRepository) => {
     let shuttingDown = false;
     const activeJobs = new Set<Promise<void>>();
+    const activeControllers = new Set<AbortController>();
+    const cleanupIntervalMs = config.cleanupIntervalSeconds * 1000;
 
     const shutdown = () => {
         shuttingDown = true;
+        // Abort in-flight work so FFmpeg/ffprobe/ZIP stop promptly instead of running until the
+        // per-job deadline. Aborted jobs stay 'processing' and are requeued by recovery on restart.
+        for (const controller of activeControllers) {
+            controller.abort();
+        }
     };
 
     process.once("SIGINT", shutdown);
     process.once("SIGTERM", shutdown);
 
     await recoverInterruptedJobs(config, jobs);
+    // recoverInterruptedJobs already ran a cleanup pass; start the interval clock from here so the
+    // worker does not re-scan storage on its very first loop iteration.
+    let lastCleanupMs = Date.now();
 
     while (true) {
         if (shuttingDown && activeJobs.size === 0) {
             break;
         }
 
-        await runCleanup(config, jobs);
+        if (!shuttingDown && Date.now() - lastCleanupMs >= cleanupIntervalMs) {
+            await runCleanup(config, jobs);
+            lastCleanupMs = Date.now();
+        }
         await deliverDueEmails(config, jobs);
 
         while (activeJobs.size < config.workerConcurrency) {
@@ -357,7 +429,9 @@ export const runWorkerLoop = async (config: BackendConfig, jobs: JobRepository) 
                 break;
             }
 
-            const activeJob = processJob(config, jobs, job)
+            const controller = new AbortController();
+            activeControllers.add(controller);
+            const activeJob = processJob(config, jobs, job, {signal: controller.signal})
                 .catch((error) => {
                     console.error("Worker job promise rejected", {
                         jobId: job.publicJobId,
@@ -366,6 +440,7 @@ export const runWorkerLoop = async (config: BackendConfig, jobs: JobRepository) 
                 })
                 .finally(() => {
                     activeJobs.delete(activeJob);
+                    activeControllers.delete(controller);
                 });
             activeJobs.add(activeJob);
         }

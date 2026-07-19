@@ -22,6 +22,8 @@ services:
     worker:
         image: chaptify:latest
         command: [node, .output/worker.mjs]
+        # Give the worker time to abort in-flight FFmpeg work and unwind before SIGKILL.
+        stop_grace_period: 30s
         extra_hosts:
             - "host.docker.internal:host-gateway"
         env_file:
@@ -49,7 +51,7 @@ services:
               required: false
         environment:
             NUXT_STORAGE_ROOT: /data/chaptify
-            NUXT_CLEANUP_INTERVAL_SECONDS: ${NUXT_CLEANUP_INTERVAL_SECONDS:-5}
+            NUXT_CLEANUP_INTERVAL_SECONDS: ${NUXT_CLEANUP_INTERVAL_SECONDS:-300}
         volumes:
             - chaptify-storage:/data/chaptify
         restart: unless-stopped
