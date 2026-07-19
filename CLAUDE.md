@@ -12,7 +12,7 @@ Note: `AGENTS.md` claims "No automated test command is currently defined." That 
 ## Commands
 
 ```bash
-npm run dev            # API + frontend (wraps `nuxi dev` via scripts/nuxt-dev.mjs; loads .env)
+npm run dev            # API + frontend (`nuxi dev`; loads .env natively)
 npm run worker:dev     # worker process, in a SECOND shell — required to process queued jobs
 npm run cleanup:dev    # run cleanup once
 
@@ -68,9 +68,9 @@ Raw tokens are never persisted — only SHA-256 hashes. Status responses never l
 - FFmpeg/ffprobe: invoke with argument arrays via the wrapper in `server/utils/backend/process.ts`; never `shell: true`, never interpolate user input, never trust uploaded filenames/MIME.
 - Designed for a single API + single worker on one VPS; per-IP counters and upload slots are in-memory (reset on restart), while capacity/reservations/state are durable in SQLite.
 
-### Runtime config quirk
+### Runtime config notes
 
-`NUXT_APP_BASE_URL` collides with a Nuxt-reserved name. `scripts/nuxt-dev.mjs` (dev) and `server/start.ts` (prod, via `npm run api:start`) preserve it for email links while preventing it from changing Nuxt's route base path. Don't start production with a bare `node`/`nuxi` invocation that bypasses this wrapper. All server config is read via `useRuntimeConfig()`; Mailgun secrets must stay server-only (never `runtimeConfig.public`).
+`NUXT_SITE_URL` is the public origin used in emailed download links (runtimeConfig `siteUrl`). It is intentionally NOT named `NUXT_APP_BASE_URL` — that name is reserved by Nuxt for the route path prefix (`app.baseURL`) and must stay unset unless the app is served under a subpath. `npm run api:start` (`server/start.ts`) loads `.env` and fail-fast validates production config for the bare-Node processes (API/worker/cleanup), which do not autoload `.env`. All server config is read via `useRuntimeConfig()`; Mailgun secrets must stay server-only (never `runtimeConfig.public`).
 
 ## Conventions worth remembering (see AGENTS.md for the rest)
 

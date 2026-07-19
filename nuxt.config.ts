@@ -26,7 +26,9 @@ export default defineNuxtConfig({
     css: ["~/assets/css/main.css"],
 
     runtimeConfig: {
-        appBaseUrl: "http://localhost:3000",
+        // Public absolute origin used in emailed download links (NUXT_SITE_URL). Distinct from
+        // Nuxt's reserved NUXT_APP_BASE_URL, which is a route path prefix and stays untouched.
+        siteUrl: "http://localhost:3000",
         storageRoot: "",
         maxUploadBytes: "1610612736",
         maxQueuedJobs: "10",

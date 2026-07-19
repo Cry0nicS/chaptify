@@ -112,7 +112,7 @@ export const deliverReadyEmail = async (
         expiresAt: job.expiresAt || "",
         signingSecret: config.downloadSigningSecret
     });
-    const downloadUrl = `${normalizeBaseUrl(config.appBaseUrl || "http://localhost:3000")}/api/download/${token}`;
+    const downloadUrl = `${normalizeBaseUrl(config.siteUrl || "http://localhost:3000")}/api/download/${token}`;
 
     if (!job.email || !job.expiresAt || job.emailAttempts >= config.emailRetryAttempts) {
         jobs.markEmailFailed(job.internalId, "retry_limit_reached");

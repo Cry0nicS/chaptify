@@ -17,7 +17,7 @@ const numericEnvSchema = (defaultValue: number, minimum: number) =>
         .pipe(z.number().int().min(minimum));
 
 const runtimeConfigSchema = z.object({
-    appBaseUrl: z.string().url().optional().or(z.literal("")),
+    siteUrl: z.string().url().optional().or(z.literal("")),
     storageRoot: z.string().min(1),
     maxUploadBytes: numericEnvSchema(1_073_741_824, 1),
     maxQueuedJobs: numericEnvSchema(10, 1),
@@ -67,10 +67,7 @@ export type BackendConfig = z.infer<typeof runtimeConfigSchema>;
  */
 export const getBackendConfigFromEnv = (): BackendConfig =>
     runtimeConfigSchema.parse({
-        appBaseUrl:
-            process.env.CHAPTIFY_APP_BASE_URL ||
-            process.env.NUXT_APP_BASE_URL ||
-            "http://localhost:3000",
+        siteUrl: process.env.NUXT_SITE_URL || "http://localhost:3000",
         storageRoot: process.env.NUXT_STORAGE_ROOT || DEFAULT_STORAGE_ROOT,
         maxUploadBytes: process.env.NUXT_MAX_UPLOAD_BYTES,
         maxQueuedJobs: process.env.NUXT_MAX_QUEUED_JOBS,
@@ -112,9 +109,7 @@ export const getBackendConfigFromEnv = (): BackendConfig =>
 
 /**
  * Reads backend configuration inside Nitro while preserving worker-compatible fallbacks.
- *
- * Environment values can still override runtime config during Docker starts, and
- * `CHAPTIFY_APP_BASE_URL` avoids Nuxt treating `NUXT_APP_BASE_URL` as a route base path.
+ * Environment values can still override runtime config during Docker starts.
  */
 /**
  * Returns the first source value that is actually set.
@@ -131,12 +126,7 @@ export const getBackendConfig = (): BackendConfig => {
     const values = runtimeConfig as Record<string, unknown>;
 
     return runtimeConfigSchema.parse({
-        appBaseUrl: pick(
-            process.env.CHAPTIFY_APP_BASE_URL,
-            process.env.NUXT_APP_BASE_URL,
-            values.appBaseUrl,
-            "http://localhost:3000"
-        ),
+        siteUrl: pick(values.siteUrl, process.env.NUXT_SITE_URL, "http://localhost:3000"),
         storageRoot: pick(values.storageRoot, process.env.NUXT_STORAGE_ROOT, DEFAULT_STORAGE_ROOT),
         maxUploadBytes: pick(values.maxUploadBytes, process.env.NUXT_MAX_UPLOAD_BYTES),
         maxQueuedJobs: pick(values.maxQueuedJobs, process.env.NUXT_MAX_QUEUED_JOBS),
@@ -233,7 +223,7 @@ export const normalizeBaseUrl = (baseUrl: string): string => baseUrl.replace(/\/
  * missing signing secret (needed to sign/verify download links) is always fatal. Mailgun config is
  * only required by processes that actually send email (the worker), so pass `requireMailgun` there.
  *
- * A localhost `appBaseUrl` is only a warning: emailed links would not work for external recipients
+ * A localhost `siteUrl` is only a warning: emailed links would not work for external recipients
  * in a real deployment, but localhost is legitimate for local and containerized smoke testing.
  */
 export const validateProductionConfig = (
@@ -268,11 +258,11 @@ export const validateProductionConfig = (
         }
     }
 
-    if (!config.appBaseUrl) {
-        problems.push("NUXT_APP_BASE_URL must be set to the public application origin");
-    } else if (/localhost|127\.0\.0\.1|::1/i.test(config.appBaseUrl)) {
+    if (!config.siteUrl) {
+        problems.push("NUXT_SITE_URL must be set to the public application origin");
+    } else if (/localhost|127\.0\.0\.1|::1/i.test(config.siteUrl)) {
         console.warn(
-            "NUXT_APP_BASE_URL is a localhost origin; emailed download links will not work for external recipients"
+            "NUXT_SITE_URL is a localhost origin; emailed download links will not work for external recipients"
         );
     }
 
