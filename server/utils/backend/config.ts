@@ -223,12 +223,17 @@ export const normalizeBaseUrl = (baseUrl: string): string => baseUrl.replace(/\/
 /**
  * Fails fast when a production process is missing configuration its core features require.
  *
- * Outside production this is a no-op so local development keeps working with lenient defaults. In
- * production a missing signing secret, incomplete Mailgun configuration, or a localhost app origin
- * silently breaks emailed download links while the service still reports healthy, so these are
- * surfaced at startup instead of after a user never receives a working link.
+ * Outside production this is a no-op so local development keeps working with lenient defaults. A
+ * missing signing secret (needed to sign/verify download links) is always fatal. Mailgun config is
+ * only required by processes that actually send email (the worker), so pass `requireMailgun` there.
+ *
+ * A localhost `appBaseUrl` is only a warning: emailed links would not work for external recipients
+ * in a real deployment, but localhost is legitimate for local and containerized smoke testing.
  */
-export const validateProductionConfig = (config: BackendConfig): void => {
+export const validateProductionConfig = (
+    config: BackendConfig,
+    options: {requireMailgun?: boolean} = {}
+): void => {
     if (process.env.NODE_ENV !== "production") {
         return;
     }
@@ -239,25 +244,29 @@ export const validateProductionConfig = (config: BackendConfig): void => {
         problems.push("NUXT_DOWNLOAD_SIGNING_SECRET must be set to at least 32 characters");
     }
 
-    if (!config.mailgunKey) {
-        problems.push("NUXT_MAILGUN_KEY is required");
+    if (options.requireMailgun) {
+        if (!config.mailgunKey) {
+            problems.push("NUXT_MAILGUN_KEY is required");
+        }
+
+        if (!config.mailgunDomain) {
+            problems.push("NUXT_MAILGUN_DOMAIN is required");
+        }
+
+        if (!config.mailgunSender) {
+            problems.push("NUXT_MAILGUN_SENDER is required");
+        }
+
+        if (!config.mailgunBaseUrl) {
+            problems.push("NUXT_MAILGUN_BASE_URL is required");
+        }
     }
 
-    if (!config.mailgunDomain) {
-        problems.push("NUXT_MAILGUN_DOMAIN is required");
-    }
-
-    if (!config.mailgunSender) {
-        problems.push("NUXT_MAILGUN_SENDER is required");
-    }
-
-    if (!config.mailgunBaseUrl) {
-        problems.push("NUXT_MAILGUN_BASE_URL is required");
-    }
-
-    if (!config.appBaseUrl || /localhost|127\.0\.0\.1|::1/i.test(config.appBaseUrl)) {
-        problems.push(
-            "NUXT_APP_BASE_URL must be set to the public application origin (not localhost)"
+    if (!config.appBaseUrl) {
+        problems.push("NUXT_APP_BASE_URL must be set to the public application origin");
+    } else if (/localhost|127\.0\.0\.1|::1/i.test(config.appBaseUrl)) {
+        console.warn(
+            "NUXT_APP_BASE_URL is a localhost origin; emailed download links will not work for external recipients"
         );
     }
 

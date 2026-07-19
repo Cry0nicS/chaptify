@@ -11,7 +11,7 @@ loadDotenv();
 
 const main = async () => {
     const config = getBackendConfigFromEnv();
-    validateProductionConfig(config);
+    validateProductionConfig(config, {requireMailgun: true});
     await ensureStorageRoot(config.storageRoot);
     const database = openDatabase(config.storageRoot);
     const jobs = createJobRepository(database);

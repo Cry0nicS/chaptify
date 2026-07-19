@@ -1523,6 +1523,37 @@ describe("production config validation", () => {
             })
         ).not.toThrow();
     });
+
+    it("treats a localhost app origin as a warning, not a fatal error", () => {
+        process.env.NODE_ENV = "production";
+
+        // The API/cleanup processes (and containerized smoke tests) must still boot on localhost.
+        expect(() =>
+            validateProductionConfig({
+                ...makeConfig("."),
+                appBaseUrl: "http://localhost:3000"
+            })
+        ).not.toThrow();
+    });
+
+    it("requires Mailgun only when requireMailgun is set (worker)", () => {
+        process.env.NODE_ENV = "production";
+        const withoutMailgun = {
+            ...makeConfig("."),
+            appBaseUrl: "https://chaptify.example",
+            mailgunKey: "",
+            mailgunDomain: "",
+            mailgunSender: "",
+            mailgunBaseUrl: ""
+        };
+
+        // API/cleanup: Mailgun not required.
+        expect(() => validateProductionConfig(withoutMailgun)).not.toThrow();
+        // Worker: Mailgun required.
+        expect(() => validateProductionConfig(withoutMailgun, {requireMailgun: true})).toThrow(
+            /NUXT_MAILGUN_KEY/
+        );
+    });
 });
 
 describe("media input hardening", () => {
