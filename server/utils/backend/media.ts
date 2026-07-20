@@ -483,3 +483,155 @@ export const splitChapters = async (
 
     return outputPaths;
 };
+
+/** A whole-file convert can run far longer than one chapter cut, so it leans on the job deadline. */
+const MAX_CONVERT_TIMEOUT_MS = 24 * 60 * 60_000;
+
+export interface ConversionProbe {
+    duration: number;
+    audioCodec: string;
+    chapterCount: number;
+    bookTitle: string | null;
+    author: string | null;
+    /** True when the source carries an embedded cover (an attached-picture video stream). */
+    hasCoverArt: boolean;
+}
+
+/**
+ * Lightweight probe for the standalone converter.
+ *
+ * Unlike `inspectAudioFile`, this intentionally does NOT require chapters or a minimum duration —
+ * conversion works on any valid mp3/m4b (songs, clips, audiobooks). It still enforces the same
+ * codec/container support and the upper duration cap, and it fails cheaply so a corrupt or
+ * mislabeled upload never reaches the expensive transcode.
+ */
+export const probeForConversion = async (
+    sourcePath: string,
+    options: MediaProcessingOptions = {}
+): Promise<ConversionProbe> => {
+    const limits = limitsWithDefaults(options);
+    let parsed: z.infer<typeof ffprobeOutputSchema>;
+
+    try {
+        const result = await runProcess(
+            "ffprobe",
+            [
+                "-v",
+                "error",
+                "-protocol_whitelist",
+                "file",
+                "-show_format",
+                "-show_streams",
+                "-show_chapters",
+                "-print_format",
+                "json",
+                sourcePath
+            ],
+            remainingTimeoutMs(limits.ffprobeTimeoutMs, options.deadlineMs),
+            options.signal
+        );
+        parsed = ffprobeOutputSchema.parse(JSON.parse(result.stdout));
+    } catch (error) {
+        throw new PublicJobError("INVALID_AUDIO_FILE", String(error));
+    }
+
+    const audioStream = parsed.streams.find((stream) => stream.codec_type === "audio");
+    if (!audioStream?.codec_name) {
+        throw new PublicJobError("NO_AUDIO_STREAM");
+    }
+
+    if (!Number.isFinite(parsed.format.duration) || parsed.format.duration <= 0) {
+        throw new PublicJobError("INVALID_AUDIO_FILE");
+    }
+
+    if (parsed.format.duration > limits.maxAudiobookDurationSeconds) {
+        throw new PublicJobError("PROCESSING_FAILED", "Audio duration exceeds configured limit");
+    }
+
+    assertSupportedInput(audioStream.codec_name, parsed.format.format_name);
+
+    return {
+        duration: parsed.format.duration,
+        audioCodec: audioStream.codec_name,
+        chapterCount: parsed.chapters.length,
+        bookTitle: readFormatTag(parsed.format.tags, "title"),
+        author:
+            readFormatTag(parsed.format.tags, "artist") ??
+            readFormatTag(parsed.format.tags, "album_artist") ??
+            readFormatTag(parsed.format.tags, "author"),
+        hasCoverArt: parsed.streams.some((stream) => stream.codec_type === "video")
+    };
+};
+
+/**
+ * Transcodes the whole file to `outputFormat` as a faithful repackage.
+ *
+ * Because mp3 and m4b never share a codec, this always re-encodes (no stream copy). Unlike the
+ * chapter split — which deliberately strips everything — conversion preserves the source's global
+ * metadata (`-map_metadata 0`), embedded chapters (`-map_chapters 0`), and cover art (the attached
+ * picture stream, copied through when present). The output is written to a fixed, safe on-disk name;
+ * the user-facing filename is derived from the display name at download time.
+ */
+export const convertAudio = async (
+    storageRoot: string,
+    sourcePath: string,
+    outputDirectory: string,
+    outputFormat: OutputFormat,
+    hasCoverArt: boolean,
+    options: MediaProcessingOptions = {}
+): Promise<string> => {
+    const spec = OUTPUT_SPECS[outputFormat];
+    const safeOutputDirectory = ensurePathInside(storageRoot, outputDirectory);
+    await mkdir(safeOutputDirectory, {recursive: true, mode: 0o700});
+    const outputPath = ensurePathInside(
+        storageRoot,
+        join(safeOutputDirectory, `converted.${spec.extension}`)
+    );
+
+    // Copy the attached-picture stream through only when the source actually has one; mapping a
+    // missing stream (or setting its disposition) otherwise makes ffmpeg fail.
+    const coverArgs = hasCoverArt
+        ? ["-map", "0:v:0?", "-c:v", "copy", "-disposition:v:0", "attached_pic"]
+        : [];
+    // id3v2 v3 makes the preserved tags and cover widely readable in mp3 players.
+    const id3Args = outputFormat === "mp3" ? ["-id3v2_version", "3"] : [];
+
+    try {
+        await runProcess(
+            "ffmpeg",
+            [
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-protocol_whitelist",
+                "file",
+                "-i",
+                sourcePath,
+                "-map",
+                "0:a:0",
+                ...coverArgs,
+                "-map_metadata",
+                "0",
+                "-map_chapters",
+                "0",
+                ...spec.encodeArgs,
+                ...spec.muxArgs,
+                ...id3Args,
+                outputPath
+            ],
+            remainingTimeoutMs(MAX_CONVERT_TIMEOUT_MS, options.deadlineMs),
+            options.signal
+        );
+        const outputStats = await stat(outputPath);
+        if (outputStats.size === 0) {
+            throw new Error("Empty converted output");
+        }
+    } catch (error) {
+        await rm(safeOutputDirectory, {recursive: true, force: true});
+        throw new PublicJobError("PROCESSING_FAILED", String(error));
+    }
+
+    return outputPath;
+};

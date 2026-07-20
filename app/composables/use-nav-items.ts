@@ -8,6 +8,11 @@ export const useNavItems = () => {
             icon: "i-lucide-house"
         },
         {
+            label: "Audio Converter",
+            to: "/convert",
+            icon: "i-lucide-repeat"
+        },
+        {
             label: "About",
             to: "/about",
             icon: "i-lucide-book-open"

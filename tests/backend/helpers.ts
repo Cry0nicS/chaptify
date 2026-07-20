@@ -88,6 +88,7 @@ export const createQueuedJob = (
     jobs.createJob({
         publicJobId: "public-job-id",
         internalId: "internal-job-id",
+        kind: "split",
         displayFilename: "Book.m4b",
         sourceFormat: "m4b",
         outputFormat: "m4b",

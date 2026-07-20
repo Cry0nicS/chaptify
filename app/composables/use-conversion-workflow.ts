@@ -3,8 +3,8 @@ import type {FrontendApiError} from "../utils/api-errors";
 import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue";
 import {browserDownloadGrantResponseSchema} from "#shared/utils/schemas";
 import {toFrontendApiError} from "../utils/api-errors";
-import {maskEmailAddress, validateEmailAddress} from "../utils/email";
-import {getAudiobookExtension, validateAudiobookFile} from "../utils/file-validation";
+import {maskEmailAddress} from "../utils/email";
+import {getAudiobookExtension} from "../utils/file-validation";
 import {formatFileSize} from "../utils/format-file-size";
 import {displayProcessingProgress} from "../utils/progress";
 
@@ -19,18 +19,17 @@ type WorkflowState =
     | {status: "expired"; job: JobStatusResponse};
 
 /**
- * Owns the audiobook upload → process → download state machine for the home page.
+ * Owns the upload → transcode → download state machine for the standalone converter page.
  *
- * Composes the low-level `useJobUpload` (progress-aware XHR upload) and `useJobStatus` (polling +
- * session recovery) composables into the single `workflow` state the page renders, and exposes the
- * handful of refs, derived values, and actions the template binds to. Extracted from the page so
- * the state machine is isolated from markup and independently testable.
+ * Structurally the same as `useJobWorkflow` (the split flow) — it composes `useJobUpload` and
+ * `useJobStatus` and drives the same `workflow` states — but it posts to the convert endpoint,
+ * targets a constrained output format (the other of mp3/m4b) instead of a split toggle, and has no
+ * chapter concerns.
  */
-export const useJobWorkflow = () => {
+export const useConversionWorkflow = () => {
     const selectedFile = ref<File | null>(null);
     const email = ref("");
-    const outputFormat = ref<OutputFormat>("mp3");
-    const splitWithoutChapters = ref(false);
+    const outputFormat = ref<OutputFormat>("m4b");
     const workflow = ref<WorkflowState>({status: "idle"});
     const pageError = ref<FrontendApiError | null>(null);
     const submittedEmail = ref<string | null>(null);
@@ -42,7 +41,12 @@ export const useJobWorkflow = () => {
         event.returnValue = "";
     };
 
-    const {abortUpload, isUploading, progress: uploadProgress, uploadJob} = useJobUpload();
+    const {
+        abortUpload,
+        isUploading,
+        progress: uploadProgress,
+        uploadJob
+    } = useJobUpload({endpoint: "/api/convert"});
     const {
         activeJobAccessToken,
         activeJobId,
@@ -56,16 +60,6 @@ export const useJobWorkflow = () => {
     } = useJobStatus();
     const {isDeleting, deleted, deleteError, runDeletion, resetDeletion} = useJobDeletion();
 
-    const fileValidation = computed(() => validateAudiobookFile(selectedFile.value));
-    const emailValidation = computed(() =>
-        email.value.trim() ? validateEmailAddress(email.value) : "Enter a valid email address."
-    );
-    const canSubmit = computed(
-        () =>
-            fileValidation.value.valid &&
-            !emailValidation.value &&
-            workflow.value.status !== "uploading"
-    );
     const selectedFileDetails = computed(() => {
         if (!selectedFile.value) {
             return null;
@@ -166,8 +160,8 @@ export const useJobWorkflow = () => {
     const onFileSelected = (file: File) => {
         selectedFile.value = file;
         pageError.value = null;
-        // Default the output to the uploaded format (stream copy); the user can switch to convert.
-        outputFormat.value = getAudiobookExtension(file.name) ?? "mp3";
+        // Default the target to the other format; converting to the same format is excluded.
+        outputFormat.value = getAudiobookExtension(file.name) === "mp3" ? "m4b" : "mp3";
         workflow.value = {status: "selected"};
     };
 
@@ -209,9 +203,8 @@ export const useJobWorkflow = () => {
         }
 
         /*
-         * The browser download path uses the session-scoped job-access token, not the emailed ZIP
-         * token. This lets users recover a ready upload in the same tab session without exposing the
-         * Mailgun link credential to frontend state.
+         * Uses the session-scoped job-access token to mint a one-time grant, exactly like the split
+         * flow, so the emailed link credential never enters frontend state.
          */
         browserDownloadError.value = null;
         isBrowserDownloadStarting.value = true;
@@ -254,7 +247,7 @@ export const useJobWorkflow = () => {
     };
 
     const submitUpload = async () => {
-        if (!selectedFile.value || !canSubmit.value || isUploading.value) {
+        if (!selectedFile.value || isUploading.value) {
             return;
         }
 
@@ -265,8 +258,7 @@ export const useJobWorkflow = () => {
         const result = await uploadJob({
             file: selectedFile.value,
             email: email.value,
-            outputFormat: outputFormat.value,
-            splitWithoutChapters: splitWithoutChapters.value
+            outputFormat: outputFormat.value
         });
 
         if (result.ok) {
@@ -291,8 +283,7 @@ export const useJobWorkflow = () => {
         clearActiveJob();
         selectedFile.value = null;
         email.value = "";
-        outputFormat.value = "mp3";
-        splitWithoutChapters.value = false;
+        outputFormat.value = "m4b";
         submittedEmail.value = null;
         pageError.value = null;
         browserDownloadError.value = null;
@@ -320,7 +311,6 @@ export const useJobWorkflow = () => {
         selectedFile,
         email,
         outputFormat,
-        splitWithoutChapters,
         workflow,
         pageError,
         visibleProgress,

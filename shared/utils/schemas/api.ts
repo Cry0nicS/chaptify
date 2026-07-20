@@ -43,6 +43,10 @@ export const browserDownloadGrantResponseSchema = z.object({
     downloadUrl: z.string().min(1)
 });
 
+export const jobDeleteResponseSchema = z.object({
+    status: z.literal("deleted")
+});
+
 export const jobStatusResponseSchema = z.object({
     jobId: z.string().min(16),
     status: publicJobStatusSchema,

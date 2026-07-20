@@ -1,13 +1,14 @@
 import {createReadStream} from "node:fs";
 import {stat} from "node:fs/promises";
-import {basename} from "node:path";
 import {createBackendContext} from "../../../utils/backend/context";
+import {describeJobDownload} from "../../../utils/backend/download";
 import {hashBrowserDownloadGrantToken} from "../../../utils/backend/ids";
 import {ensurePathInside} from "../../../utils/backend/paths";
 import {checkDownloadRateLimit, getClientIp} from "../../../utils/backend/rate-limits";
 
 /**
- * GET /api/download/grants/:grant streams a ZIP authorized by a short-lived browser grant.
+ * GET /api/download/grants/:grant streams a ready job's artifact authorized by a short-lived browser
+ * grant (a ZIP for split jobs, a single audio file for convert jobs).
  *
  * The uploading browser obtains this grant with its session-only job access token. Failed grant
  * creation stays on the app page; this route is only navigated to after authorization succeeds.
@@ -34,24 +35,21 @@ export default defineEventHandler(async (event) => {
         new Date().toISOString()
     );
 
-    if (!job?.zipPath) {
+    if (!job?.outputPath) {
         throw createError({statusCode: 404, statusMessage: "Not found"});
     }
 
-    const zipPath = ensurePathInside(config.storageRoot, job.zipPath);
+    const artifactPath = ensurePathInside(config.storageRoot, job.outputPath);
 
     try {
-        await stat(zipPath);
+        await stat(artifactPath);
     } catch {
         throw createError({statusCode: 404, statusMessage: "Not found"});
     }
 
-    setHeader(event, "Content-Type", "application/zip");
-    setHeader(
-        event,
-        "Content-Disposition",
-        `attachment; filename="${basename(zipPath).replace(/"/g, "")}"`
-    );
+    const {filename, contentType} = describeJobDownload(job);
+    setHeader(event, "Content-Type", contentType);
+    setHeader(event, "Content-Disposition", `attachment; filename="${filename.replace(/"/g, "")}"`);
 
-    return sendStream(event, createReadStream(zipPath));
+    return sendStream(event, createReadStream(artifactPath));
 });

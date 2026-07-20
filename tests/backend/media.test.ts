@@ -108,6 +108,7 @@ describe("synthetic ffmpeg end-to-end media", () => {
             jobs.createJob({
                 publicJobId: `${inputFormat}-public-job-id`,
                 internalId: `${inputFormat}-job`,
+                kind: "split",
                 displayFilename: `Synthetic.${inputFormat}`,
                 sourceFormat: inputFormat,
                 outputFormat: inputFormat,
@@ -128,8 +129,8 @@ describe("synthetic ffmpeg end-to-end media", () => {
 
             const ready = jobs.findByInternalId(`${inputFormat}-job`);
             expect(ready?.status).toBe("ready");
-            expect(ready?.zipPath).toEqual(expect.any(String));
-            if (!ready?.zipPath || !ready.expiresAt) {
+            expect(ready?.outputPath).toEqual(expect.any(String));
+            if (!ready?.outputPath || !ready.expiresAt) {
                 throw new Error("Expected ready ZIP");
             }
 
@@ -137,7 +138,7 @@ describe("synthetic ffmpeg end-to-end media", () => {
             await expect(
                 access(join(storageRoot, "jobs", `${inputFormat}-job`, "chapters"))
             ).rejects.toThrow();
-            expect(await listZipEntries(ready.zipPath)).toEqual(
+            expect(await listZipEntries(ready.outputPath)).toEqual(
                 inputFormat === "mp3"
                     ? ["01 - Intro One.mp3", "02 - Second Part.mp3"]
                     : ["01 - Intro One.m4b", "02 - Second Part.m4b"]
@@ -181,7 +182,7 @@ describe("synthetic ffmpeg end-to-end media", () => {
                 .prepare("UPDATE jobs SET expires_at = ? WHERE internal_id = ?")
                 .run("2026-07-11T00:00:00.000Z", ready.internalId);
             await runCleanup(makeConfig(storageRoot), jobs);
-            await expect(access(ready.zipPath)).rejects.toThrow();
+            await expect(access(ready.outputPath)).rejects.toThrow();
 
             const expiredHistory = jobs
                 .listUploadHistory()
@@ -306,6 +307,7 @@ describe("no-chapters fallback (ffprobe)", () => {
         jobs.createJob({
             publicJobId: "seg-public-id",
             internalId: "seg-job",
+            kind: "split",
             displayFilename: "Long Lecture.mp3",
             sourceFormat: "mp3",
             outputFormat: "mp3",
@@ -330,10 +332,10 @@ describe("no-chapters fallback (ffprobe)", () => {
 
         const ready = jobs.findByInternalId("seg-job");
         expect(ready?.status).toBe("ready");
-        if (!ready?.zipPath) {
+        if (!ready?.outputPath) {
             throw new Error("Expected ready ZIP");
         }
-        const entries = await listZipEntries(ready.zipPath);
+        const entries = await listZipEntries(ready.outputPath);
         expect(entries.length).toBeGreaterThanOrEqual(2);
         expect(entries[0]).toMatch(/^01 - Part 1\.mp3$/);
 

@@ -113,8 +113,8 @@ export const runCleanup = async (
 
     for (const job of expiredJobs) {
         try {
-            if (job.zipPath) {
-                await safeRemoveInside(storageRoot, job.zipPath);
+            if (job.outputPath) {
+                await safeRemoveInside(storageRoot, job.outputPath);
             }
 
             await cleanupJobFiles(storageRoot, job.internalId);

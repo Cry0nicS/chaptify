@@ -1,43 +1,44 @@
 import {rm} from "node:fs/promises";
 import {z} from "zod";
-import {outputFormatSchema, uploadMetadataSchema} from "../../../shared/utils/schemas";
-import {createBackendContext} from "../../utils/backend/context";
-import {PublicJobError} from "../../utils/backend/errors";
+import {outputFormatSchema, uploadMetadataSchema} from "../../shared/utils/schemas";
+import {createBackendContext} from "../utils/backend/context";
+import {PublicJobError} from "../utils/backend/errors";
 import {
     createBrowserJobAccessToken,
     createInternalId,
     createPublicId,
     hashBrowserJobAccessToken
-} from "../../utils/backend/ids";
+} from "../utils/backend/ids";
 import {
     checkJobCreationLimit,
     checkUploadRateLimit,
     getClientIp,
     releaseUploadSlot,
     tryAcquireUploadSlot
-} from "../../utils/backend/rate-limits";
+} from "../utils/backend/rate-limits";
 import {
     calculateStorageReservationBytes,
     cleanupJobFiles,
     createJobStorage,
     detectUploadExtension,
     getAvailableStorageBytes
-} from "../../utils/backend/storage";
+} from "../utils/backend/storage";
 import {
     collectUploadedFilePaths,
     estimateUploadReservationBytes,
     MULTIPART_OVERHEAD_BYTES,
-    parseMultipartUpload,
-    parseUploadFields
-} from "../../utils/backend/upload-request";
+    parseConvertFields,
+    parseMultipartUpload
+} from "../utils/backend/upload-request";
 
 /**
- * POST /api/jobs creates an asynchronous audiobook-processing job.
+ * POST /api/convert creates an asynchronous format-conversion job (mp3 <-> m4b).
  *
- * The request must contain exactly one `file` upload and one `email` field. Multipart bytes are
- * streamed to a temporary upload path, moved into private job storage, and queued in SQLite; FFmpeg
- * work is performed later by the worker. The response returns the public job ID and the one-time
- * browser job-access token, while only the token hash is stored.
+ * It mirrors POST /api/jobs (same slot/capacity/reservation/storage machinery and shared queue), but
+ * queues a `kind: "convert"` job: the worker transcodes the whole file to the requested target
+ * format, preserving metadata/cover/chapters, and produces a single downloadable file rather than a
+ * ZIP of chapters. There is no chapter requirement, so any valid mp3/m4b is accepted. The target
+ * `outputFormat` is mandatory and must differ from the source format.
  */
 export default defineEventHandler(async (event) => {
     const {config, jobs} = await createBackendContext();
@@ -144,8 +145,12 @@ export default defineEventHandler(async (event) => {
             }
         );
         tempPaths = collectUploadedFilePaths(parsed.files);
-        const {file, originalFilename, email, outputFormatValues, splitWithoutChapters} =
-            parseUploadFields(parsed);
+        const {
+            file,
+            originalFilename,
+            email,
+            outputFormat: rawOutputFormat
+        } = parseConvertFields(parsed);
 
         tempPath = file.filepath;
         const extension = detectUploadExtension(originalFilename);
@@ -153,12 +158,15 @@ export default defineEventHandler(async (event) => {
             throw new PublicJobError("UNSUPPORTED_FILE_TYPE");
         }
 
-        // Default the output format to the uploaded format (stream copy); a different choice
-        // re-encodes the chapters to the requested format.
-        const outputFormat =
-            outputFormatValues.length === 1
-                ? outputFormatSchema.parse(outputFormatValues[0])
-                : extension;
+        const outputFormat = outputFormatSchema.parse(rawOutputFormat);
+        // Converting to the same format would be a pointless lossy re-encode; the client's target
+        // selector excludes it, and this guards the API directly.
+        if (outputFormat === extension) {
+            throw new PublicJobError(
+                "UNSUPPORTED_FILE_TYPE",
+                "Choose a different target format than the source"
+            );
+        }
 
         const fileSize = file.size;
         uploadMetadataSchema.parse({
@@ -167,7 +175,7 @@ export default defineEventHandler(async (event) => {
             fileSize,
             extension,
             outputFormat,
-            splitWithoutChapters
+            splitWithoutChapters: false
         });
 
         if (!tempPath) {
@@ -208,7 +216,7 @@ export default defineEventHandler(async (event) => {
             {
                 publicJobId,
                 internalId: storedUpload.internalId,
-                kind: "split",
+                kind: "convert",
                 displayFilename: storedUpload.displayFilename,
                 sourceFormat: storedUpload.sourceFormat,
                 outputFormat,
@@ -217,7 +225,7 @@ export default defineEventHandler(async (event) => {
                 sourcePath: storedUpload.sourcePath,
                 createdAt,
                 browserJobAccessTokenHash: hashBrowserJobAccessToken(jobAccessToken),
-                splitWithoutChapters
+                splitWithoutChapters: false
             },
             config.maxQueuedJobs
         );

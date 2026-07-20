@@ -3,13 +3,12 @@ import type {OutputFormat} from "#shared/utils/types";
 import type {FileValidationResult} from "../utils/file-validation";
 import {computed} from "vue";
 import {validateEmailAddress} from "../utils/email";
-import {validateAudiobookFile} from "../utils/file-validation";
+import {getAudiobookExtension, validateAudiobookFile} from "../utils/file-validation";
 
 const props = defineProps<{
     file: File | null;
     email: string;
     outputFormat: OutputFormat;
-    splitWithoutChapters: boolean;
     disabled?: boolean;
     isUploading?: boolean;
     uploadProgressLabel?: string;
@@ -19,16 +18,20 @@ const props = defineProps<{
 const emit = defineEmits<{
     "update:email": [value: string];
     "update:outputFormat": [value: OutputFormat];
-    "update:splitWithoutChapters": [value: boolean];
     "fileSelected": [file: File];
     "fileRemoved": [];
     "submit": [];
 }>();
 
-const outputFormatItems = [
-    {label: "MP3", value: "mp3"},
-    {label: "M4B", value: "m4b"}
-];
+// The source format determines which target is valid: converting to the same format is excluded, so
+// the matching option is disabled and the other is the only choice.
+const sourceFormat = computed<OutputFormat | null>(() =>
+    props.file ? getAudiobookExtension(props.file.name) : null
+);
+const outputFormatItems = computed(() => [
+    {label: "MP3", value: "mp3", disabled: sourceFormat.value === "mp3"},
+    {label: "M4B", value: "m4b", disabled: sourceFormat.value === "m4b"}
+]);
 
 const onOutputFormatChange = (value: unknown) => {
     if (value === "mp3" || value === "m4b") {
@@ -50,6 +53,7 @@ const canSubmit = computed(
         fileValidation.value.valid &&
         Boolean(props.email.trim()) &&
         !emailError.value &&
+        (!sourceFormat.value || props.outputFormat !== sourceFormat.value) &&
         !props.disabled &&
         !props.isUploading
 );
@@ -67,71 +71,47 @@ const canSubmit = computed(
             @file-removed="emit('fileRemoved')" />
 
         <div class="space-y-2">
-            <span class="text-highlighted block text-sm font-medium">Output format</span>
+            <span class="text-highlighted block text-sm font-medium">Convert to</span>
             <URadioGroup
                 :model-value="outputFormat"
                 :items="outputFormatItems"
                 orientation="horizontal"
                 :disabled="disabled || isUploading"
-                aria-describedby="output-format-help"
+                aria-describedby="convert-format-help"
                 @update:model-value="onOutputFormatChange" />
             <p
-                id="output-format-help"
+                id="convert-format-help"
                 class="text-muted text-sm">
-                The format for the chapter files. If it differs from the uploaded audiobook,
-                Chaptify re-encodes the audio, which takes a little longer.
+                The target format. Metadata, cover art, and chapters are preserved.
             </p>
-        </div>
-
-        <div class="border-default bg-muted/30 rounded-lg border p-4">
-            <div class="flex items-start justify-between gap-4">
-                <div class="space-y-1">
-                    <label
-                        class="text-highlighted block text-sm font-medium"
-                        for="split-without-chapters">
-                        No chapters? Split into 30-minute parts
-                    </label>
-                    <p
-                        id="split-help"
-                        class="text-muted text-sm">
-                        If the audiobook has no embedded chapter marks, split it into fixed
-                        30-minute segments instead of failing. Only applies to longer files.
-                    </p>
-                </div>
-                <USwitch
-                    id="split-without-chapters"
-                    :model-value="splitWithoutChapters"
-                    :disabled="disabled || isUploading"
-                    aria-describedby="split-help"
-                    @update:model-value="emit('update:splitWithoutChapters', Boolean($event))" />
-            </div>
         </div>
 
         <div class="space-y-2">
             <label
                 class="text-highlighted block text-sm font-medium"
-                for="email">
+                for="convert-email">
                 Email address
             </label>
             <UInput
-                id="email"
+                id="convert-email"
                 :model-value="email"
                 type="email"
                 autocomplete="email"
                 placeholder="you@example.com"
                 :disabled="disabled || isUploading"
                 :aria-invalid="Boolean(emailError)"
-                aria-describedby="email-help email-error"
+                aria-describedby="convert-email-help convert-email-error"
                 class="w-full"
                 @update:model-value="emit('update:email', String($event))" />
             <p
-                id="email-help"
+                id="convert-email-help"
                 class="text-muted text-sm">
-                Chaptify emails the temporary download link after processing finishes.
+                Processing happens on our server and can take a few minutes. We email the download
+                link when it is ready — keep this tab open to grab it sooner.
             </p>
             <p
                 v-if="emailError"
-                id="email-error"
+                id="convert-email-error"
                 class="text-error text-sm"
                 role="alert">
                 {{ emailError }}
@@ -143,7 +123,7 @@ const canSubmit = computed(
             class="border-default bg-muted/30 space-y-3 rounded-lg border p-4"
             aria-live="polite">
             <div class="flex items-center justify-between gap-4">
-                <p class="text-highlighted text-sm font-medium">Uploading audiobook</p>
+                <p class="text-highlighted text-sm font-medium">Uploading file</p>
                 <p class="text-muted font-mono text-sm tabular-nums">
                     {{ uploadProgressPercent }}%
                 </p>
@@ -162,10 +142,10 @@ const canSubmit = computed(
             type="submit"
             size="xl"
             block
-            icon="i-lucide-scissors"
+            icon="i-lucide-repeat"
             :loading="isUploading"
             :disabled="!canSubmit">
-            Split audiobook into chapters
+            Convert file
         </UButton>
     </form>
 </template>

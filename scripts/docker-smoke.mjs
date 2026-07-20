@@ -417,11 +417,11 @@ const createReadyJob = async (root, format, outputFormat) => {
     }
 
     const jobRows = queryDatabase(
-        "SELECT internal_id, source_path, zip_path, processing_started_at FROM jobs WHERE public_job_id = ?",
+        "SELECT internal_id, source_path, output_path, processing_started_at FROM jobs WHERE public_job_id = ?",
         [created.jobId]
     );
     const job = jobRows[0];
-    if (!job?.internal_id || !job.zip_path) {
+    if (!job?.internal_id || !job.output_path) {
         throw new Error("Ready job row was not found in SQLite");
     }
     if (!job.processing_started_at) {
@@ -510,13 +510,13 @@ const runFormatWorkflow = async (root, format, outputFormat) => {
         }
     }
 
-    const previousZipPath = job.zip_path;
+    const previousOutputPath = job.output_path;
     executeDatabase("UPDATE jobs SET expires_at = ? WHERE public_job_id = ?", [
         new Date(Date.now() - 1000).toISOString(),
         created.jobId
     ]);
     await waitForExpired(created.jobId, job.internal_id);
-    assertContainerPathMissing(previousZipPath);
+    assertContainerPathMissing(previousOutputPath);
 
     const expiredGrantResponse = await fetch(`${apiBaseUrl}${unusedGrant.downloadUrl}`);
     if (expiredGrantResponse.status !== 404) {
@@ -585,10 +585,10 @@ const runWorkerRestartEmailWorkflow = async (root, mailgunMock) => {
     }
 
     const readyRows = queryDatabase(
-        "SELECT zip_path FROM jobs WHERE public_job_id = ? AND email_status = 'sent' AND email IS NULL",
+        "SELECT output_path FROM jobs WHERE public_job_id = ? AND email_status = 'sent' AND email IS NULL",
         [created.jobId]
     );
-    if (readyRows[0]?.zip_path !== job.zip_path) {
+    if (readyRows[0]?.output_path !== job.output_path) {
         throw new Error("Email recovery changed the ready ZIP path");
     }
 };
