@@ -26,7 +26,8 @@ describe("worker shutdown and failure handling", () => {
             email: "reader@example.test",
             sourcePath: join(storageRoot, "jobs", "shutdown-job", "source", "source.m4b"),
             createdAt: new Date().toISOString(),
-            browserJobAccessTokenHash: hashBrowserJobAccessToken("browser-token")
+            browserJobAccessTokenHash: hashBrowserJobAccessToken("browser-token"),
+            splitWithoutChapters: false
         });
         const claimed = jobs.claimQueuedJob(new Date().toISOString());
 

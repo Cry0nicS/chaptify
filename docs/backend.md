@@ -23,9 +23,12 @@ The storage root must be writable by both API and worker. It is never served sta
 
 ## API Endpoints
 
-- `POST /api/jobs` accepts multipart form fields `file`, `email`, and an optional `outputFormat`
-  (`mp3` or `m4b`; defaults to the uploaded format), streams one `.mp3` or `.m4b` upload to disk,
-  validates queue and size limits, creates a queued job, and returns `202`.
+- `POST /api/jobs` accepts multipart form fields `file`, `email`, an optional `outputFormat`
+  (`mp3` or `m4b`; defaults to the uploaded format), and an optional `splitWithoutChapters`
+  (`"true"`/`"false"`; default false). It streams one `.mp3` or `.m4b` upload to disk, validates
+  queue and size limits, creates a queued job, and returns `202`. When `splitWithoutChapters` is
+  true and the file has no embedded chapters, the worker splits it into fixed-length parts (see
+  below) instead of failing.
 - `GET /api/jobs/:jobId` returns safe public status, progress, email status, and public errors.
 - `GET /api/download/:token` streams a ready ZIP while the signed email credential is valid.
 - `POST /api/jobs/:jobId/download` accepts the same-tab browser access credential in the request
@@ -67,9 +70,16 @@ bookkeeping: a failed history write logs a warning and never fails an upload or 
 
 ## Processing
 
-This version requires embedded chapter metadata. Files without valid embedded chapters fail with
-`NO_CHAPTERS_FOUND`. Silence detection, AI detection, manual chapter editing, accounts, external
-object storage, Redis, and multi-node workers are intentionally out of scope.
+By default this version requires embedded chapter metadata. Files without valid embedded chapters
+fail with `NO_CHAPTERS_FOUND`. Silence detection, AI chapter detection, manual chapter editing,
+accounts, external object storage, Redis, and multi-node workers are intentionally out of scope.
+
+As an opt-in fallback (`splitWithoutChapters` on the upload), a file with no embedded chapters is
+split into fixed-length parts titled "Part N" of `NUXT_FALLBACK_SEGMENT_SECONDS` (default 1800 =
+30 min) each. A trailing part shorter than 60 seconds is folded into the previous one. This is
+gated by `NUXT_MIN_SEGMENTED_DURATION_SECONDS` (default 3600 = 1 h): shorter files are rejected
+with `AUDIOBOOK_TOO_SHORT` so a song is never split into pointless segments. Segment count is
+still bounded by `NUXT_MAX_CHAPTERS`.
 
 The worker uses `ffprobe` to validate media, chapters, codec, and container, then `ffmpeg` to write
 the first audio stream into one ordered file per chapter in the job's requested output format
@@ -172,6 +182,8 @@ Operational defaults:
 - `NUXT_JOB_RETENTION_HOURS=12`
 - `NUXT_MAX_AUDIOBOOK_DURATION_SECONDS=108000`
 - `NUXT_MAX_CHAPTERS=300`
+- `NUXT_FALLBACK_SEGMENT_SECONDS=1800`
+- `NUXT_MIN_SEGMENTED_DURATION_SECONDS=3600`
 - `NUXT_JOB_PROCESSING_TIMEOUT_SECONDS=14400`
 - `NUXT_FFPROBE_TIMEOUT_SECONDS=30`
 - `NUXT_FFMPEG_CHAPTER_TIMEOUT_SECONDS=1200`

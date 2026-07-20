@@ -88,5 +88,8 @@ export const uploadMetadataSchema = z.object({
     fileName: z.string().min(1).max(255),
     fileSize: z.number().int().positive(),
     extension: z.enum(["mp3", "m4b"]),
-    outputFormat: outputFormatSchema
+    outputFormat: outputFormatSchema,
+    // Opt-in fallback: when the file has no embedded chapters, split it into fixed-length parts
+    // instead of failing. Only applied to files long enough to be a real audiobook.
+    splitWithoutChapters: z.boolean().optional().default(false)
 });

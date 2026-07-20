@@ -22,6 +22,7 @@ type WorkflowState =
 const selectedFile = ref<File | null>(null);
 const email = ref("");
 const outputFormat = ref<OutputFormat>("mp3");
+const splitWithoutChapters = ref(false);
 const workflow = ref<WorkflowState>({status: "idle"});
 const pageError = ref<FrontendApiError | null>(null);
 const submittedEmail = ref<string | null>(null);
@@ -246,7 +247,8 @@ const submitUpload = async () => {
     const result = await uploadJob({
         file: selectedFile.value,
         email: email.value,
-        outputFormat: outputFormat.value
+        outputFormat: outputFormat.value,
+        splitWithoutChapters: splitWithoutChapters.value
     });
 
     if (result.ok) {
@@ -272,6 +274,7 @@ const startOver = () => {
     selectedFile.value = null;
     email.value = "";
     outputFormat.value = "mp3";
+    splitWithoutChapters.value = false;
     submittedEmail.value = null;
     pageError.value = null;
     browserDownloadError.value = null;
@@ -345,6 +348,7 @@ onBeforeUnmount(() => {
                     v-else-if="showUploadForm"
                     v-model:email="email"
                     v-model:output-format="outputFormat"
+                    v-model:split-without-chapters="splitWithoutChapters"
                     :file="selectedFile"
                     :disabled="workflow.status === 'uploading'"
                     :is-uploading="workflow.status === 'uploading'"

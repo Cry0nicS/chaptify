@@ -43,7 +43,8 @@ describe("upload history", () => {
             durationSeconds: 5400.5,
             chapterCount: 12,
             author: "Jane Narrator",
-            embeddedTitle: "The Long Run"
+            embeddedTitle: "The Long Run",
+            segmented: false
         });
 
         const history = jobs
@@ -51,6 +52,7 @@ describe("upload history", () => {
             .find((entry) => entry.publicJobId === "public-job-id");
         expect(history?.durationSeconds).toBe(5400.5);
         expect(history?.chapterCount).toBe(12);
+        expect(history?.segmented).toBe(false);
         expect(history?.author).toBe("Jane Narrator");
         expect(history?.embeddedTitle).toBe("The Long Run");
     });

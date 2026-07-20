@@ -15,7 +15,9 @@ const ERROR_GUIDANCE: Record<PublicProcessingErrorCode, string> = {
         "The file could not be read as a valid audiobook. It may be damaged or use an unsupported encoding.",
     NO_AUDIO_STREAM: "The file does not contain a supported audio stream.",
     NO_CHAPTERS_FOUND:
-        "No embedded chapter markers were found. Chaptify currently supports audiobooks that already contain chapter metadata.",
+        "No embedded chapter markers were found. Re-upload with “Split into 30-minute parts” enabled to process it as timed segments instead.",
+    AUDIOBOOK_TOO_SHORT:
+        "This file is too short to split into timed parts. The fixed-length fallback is only available for longer audiobooks.",
     INVALID_CHAPTER_METADATA:
         "The audiobook contains chapter information that could not be processed safely.",
     PROCESSING_FAILED:

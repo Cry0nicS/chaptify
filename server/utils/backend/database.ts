@@ -38,6 +38,7 @@ export interface JobRecord {
     sourcePath: string;
     downloadTokenHash: string | null;
     browserJobAccessTokenHash: string | null;
+    splitWithoutChapters: boolean;
 }
 
 export interface CreateJobInput {
@@ -51,6 +52,7 @@ export interface CreateJobInput {
     sourcePath: string;
     createdAt: string;
     browserJobAccessTokenHash: string;
+    splitWithoutChapters: boolean;
 }
 
 /**
@@ -76,6 +78,8 @@ export interface UploadHistoryRecord {
     status: PublicJobStatus;
     emailStatus: PublicEmailStatus;
     errorCode: PublicProcessingErrorCode | null;
+    /** Whether the chapters were synthesized by the no-chapters fallback (null until probed). */
+    segmented: boolean | null;
     uploadedAt: string;
     completedAt: string | null;
 }
@@ -85,6 +89,7 @@ export interface UploadHistoryInspectionInput {
     chapterCount: number;
     author: string | null;
     embeddedTitle: string | null;
+    segmented: boolean;
 }
 
 export interface StorageReservationInput {
@@ -141,7 +146,8 @@ const rowToJob = (row: Record<string, unknown>): JobRecord => ({
     browserJobAccessTokenHash:
         row.browser_job_access_token_hash === null
             ? null
-            : String(row.browser_job_access_token_hash)
+            : String(row.browser_job_access_token_hash),
+    splitWithoutChapters: Number(row.split_without_chapters) === 1
 });
 
 const rowToUploadHistory = (row: Record<string, unknown>): UploadHistoryRecord => ({
@@ -159,6 +165,7 @@ const rowToUploadHistory = (row: Record<string, unknown>): UploadHistoryRecord =
     status: row.status as PublicJobStatus,
     emailStatus: row.email_status as PublicEmailStatus,
     errorCode: row.error_code === null ? null : (row.error_code as PublicProcessingErrorCode),
+    segmented: row.segmented === null ? null : Number(row.segmented) === 1,
     uploadedAt: String(row.uploaded_at),
     completedAt: row.completed_at === null ? null : String(row.completed_at)
 });
@@ -226,7 +233,8 @@ export const openDatabase = (storageRoot: string): Database.Database => {
             zip_path TEXT,
             source_path TEXT NOT NULL,
             download_token_hash TEXT,
-            browser_job_access_token_hash TEXT
+            browser_job_access_token_hash TEXT,
+            split_without_chapters INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS storage_reservations (
@@ -263,6 +271,7 @@ export const openDatabase = (storageRoot: string): Database.Database => {
             status TEXT NOT NULL,
             email_status TEXT NOT NULL,
             error_code TEXT,
+            segmented INTEGER,
             uploaded_at TEXT NOT NULL,
             completed_at TEXT
         );
@@ -277,6 +286,13 @@ export const openDatabase = (storageRoot: string): Database.Database => {
     ensureColumn(database, "jobs", "email_next_attempt_at", "email_next_attempt_at TEXT");
     ensureColumn(database, "jobs", "email_last_error", "email_last_error TEXT");
     ensureColumn(database, "jobs", "email_message_id", "email_message_id TEXT");
+    ensureColumn(
+        database,
+        "jobs",
+        "split_without_chapters",
+        "split_without_chapters INTEGER NOT NULL DEFAULT 0"
+    );
+    ensureColumn(database, "upload_history", "segmented", "segmented INTEGER");
     database
         .prepare("INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)")
         .run(1, new Date().toISOString());
@@ -412,9 +428,10 @@ export const createJobRepository = (database: Database.Database) => {
                         created_at,
                         email_status,
                         source_path,
-                        browser_job_access_token_hash
+                        browser_job_access_token_hash,
+                        split_without_chapters
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?, ?)
                 `
                 )
                 .run(
@@ -427,7 +444,8 @@ export const createJobRepository = (database: Database.Database) => {
                     input.email,
                     input.createdAt,
                     input.sourcePath,
-                    input.browserJobAccessTokenHash
+                    input.browserJobAccessTokenHash,
+                    input.splitWithoutChapters ? 1 : 0
                 );
             recordHistoryCreated(input);
         },
@@ -582,9 +600,10 @@ export const createJobRepository = (database: Database.Database) => {
                             created_at,
                             email_status,
                             source_path,
-                            browser_job_access_token_hash
+                            browser_job_access_token_hash,
+                            split_without_chapters
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?, ?)
                     `
                     )
                     .run(
@@ -597,7 +616,8 @@ export const createJobRepository = (database: Database.Database) => {
                         input.email,
                         input.createdAt,
                         input.sourcePath,
-                        input.browserJobAccessTokenHash
+                        input.browserJobAccessTokenHash,
+                        input.splitWithoutChapters ? 1 : 0
                     );
 
                 return true;
@@ -1192,7 +1212,8 @@ export const createJobRepository = (database: Database.Database) => {
                         SET duration_seconds = ?,
                             chapter_count = ?,
                             author = ?,
-                            embedded_title = ?
+                            embedded_title = ?,
+                            segmented = ?
                         WHERE public_job_id = ?
                     `
                     )
@@ -1201,6 +1222,7 @@ export const createJobRepository = (database: Database.Database) => {
                         input.chapterCount,
                         input.author,
                         input.embeddedTitle,
+                        input.segmented ? 1 : 0,
                         publicJobId
                     );
             } catch (error) {

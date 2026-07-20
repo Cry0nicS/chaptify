@@ -269,7 +269,13 @@ export default defineEventHandler(async (event) => {
             : rawOutputFormat === undefined
               ? []
               : [rawOutputFormat];
-        const allowedFieldNames = new Set(["email", "outputFormat"]);
+        const rawSplitWithoutChapters = parsed.fields.splitWithoutChapters;
+        const splitWithoutChaptersValues = Array.isArray(rawSplitWithoutChapters)
+            ? rawSplitWithoutChapters
+            : rawSplitWithoutChapters === undefined
+              ? []
+              : [rawSplitWithoutChapters];
+        const allowedFieldNames = new Set(["email", "outputFormat", "splitWithoutChapters"]);
         const fileValues = parsed.files.file;
         const files = Array.isArray(fileValues) ? fileValues : [fileValues];
         const file = files[0];
@@ -279,6 +285,7 @@ export default defineEventHandler(async (event) => {
             files.length !== 1 ||
             emailValues.length !== 1 ||
             outputFormatValues.length > 1 ||
+            splitWithoutChaptersValues.length > 1 ||
             Object.keys(parsed.files).length !== 1 ||
             Object.keys(parsed.fields).some((name) => !allowedFieldNames.has(name))
         ) {
@@ -287,6 +294,9 @@ export default defineEventHandler(async (event) => {
                 "Expected one file, an email, and an optional output format"
             );
         }
+
+        // Multipart fields arrive as strings; treat only the explicit "true" as opt-in.
+        const splitWithoutChapters = splitWithoutChaptersValues[0] === "true";
 
         tempPath = file.filepath;
         const originalFilename = file.originalFilename || "audiobook";
@@ -308,7 +318,8 @@ export default defineEventHandler(async (event) => {
             fileName: originalFilename,
             fileSize,
             extension,
-            outputFormat
+            outputFormat,
+            splitWithoutChapters
         });
 
         if (!tempPath) {
@@ -356,7 +367,8 @@ export default defineEventHandler(async (event) => {
                 email,
                 sourcePath: storedUpload.sourcePath,
                 createdAt,
-                browserJobAccessTokenHash: hashBrowserJobAccessToken(jobAccessToken)
+                browserJobAccessTokenHash: hashBrowserJobAccessToken(jobAccessToken),
+                splitWithoutChapters
             },
             config.maxQueuedJobs
         );

@@ -9,6 +9,7 @@ const props = defineProps<{
     file: File | null;
     email: string;
     outputFormat: OutputFormat;
+    splitWithoutChapters: boolean;
     disabled?: boolean;
     isUploading?: boolean;
     uploadProgressLabel?: string;
@@ -18,6 +19,7 @@ const props = defineProps<{
 const emit = defineEmits<{
     "update:email": [value: string];
     "update:outputFormat": [value: OutputFormat];
+    "update:splitWithoutChapters": [value: boolean];
     "fileSelected": [file: File];
     "fileRemoved": [];
     "submit": [];
@@ -202,6 +204,30 @@ defineExpose({
                 The format for the chapter files. If it differs from the uploaded audiobook,
                 Chaptify re-encodes the audio, which takes a little longer.
             </p>
+        </div>
+
+        <div class="border-default bg-muted/30 rounded-lg border p-4">
+            <div class="flex items-start justify-between gap-4">
+                <div class="space-y-1">
+                    <label
+                        class="text-highlighted block text-sm font-medium"
+                        for="split-without-chapters">
+                        No chapters? Split into 30-minute parts
+                    </label>
+                    <p
+                        id="split-help"
+                        class="text-muted text-sm">
+                        If the audiobook has no embedded chapter marks, split it into fixed
+                        30-minute segments instead of failing. Only applies to longer files.
+                    </p>
+                </div>
+                <USwitch
+                    id="split-without-chapters"
+                    :model-value="splitWithoutChapters"
+                    :disabled="disabled || isUploading"
+                    aria-describedby="split-help"
+                    @update:model-value="emit('update:splitWithoutChapters', Boolean($event))" />
+            </div>
         </div>
 
         <div class="space-y-2">

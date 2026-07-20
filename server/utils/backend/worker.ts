@@ -224,7 +224,10 @@ export const processJob = async (
         ffprobeTimeoutMs: config.ffprobeTimeoutSeconds * 1000,
         ffmpegChapterTimeoutMs: config.ffmpegChapterTimeoutSeconds * 1000,
         deadlineMs,
-        signal: abortController.signal
+        signal: abortController.signal,
+        segmentWithoutChapters: job.splitWithoutChapters,
+        fallbackSegmentSeconds: config.fallbackSegmentSeconds,
+        minSegmentedDurationSeconds: config.minSegmentedDurationSeconds
     };
 
     try {
@@ -239,7 +242,8 @@ export const processJob = async (
             durationSeconds: inspection.duration,
             chapterCount: inspection.chapters.length,
             author: inspection.author,
-            embeddedTitle: inspection.bookTitle
+            embeddedTitle: inspection.bookTitle,
+            segmented: inspection.segmented
         });
         jobs.updateProgress(job.internalId, 20, 0, inspection.chapters.length);
         const chapterPaths = await splitChapters(
