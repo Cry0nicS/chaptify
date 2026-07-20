@@ -196,6 +196,24 @@ This backend is designed for one API instance and one worker service sharing one
 and local storage volume on a small VPS. In-memory or local limits are not distributed across
 multiple hosts.
 
+### Database backups
+
+The SQLite database is the only state worth backing up: job files are temporary by design, but
+`upload_history` is permanent data and jobs in flight are lost with the database. The database
+runs in WAL mode, so never copy the `.sqlite` file directly while the services are running — use
+SQLite's online backup instead, which is safe under concurrent writers:
+
+```bash
+# e.g. nightly via cron on the VPS; then ship the snapshot off the machine
+sqlite3 /data/chaptify/database/chaptify.sqlite \
+    ".backup '/backups/chaptify-$(date +%F).sqlite'"
+```
+
+Inside the Compose deployment the same command can run through the API container
+(`docker compose exec chaptify ...`) with a backup directory mounted alongside the storage
+volume. Restoring is copying a snapshot back to `database/chaptify.sqlite` while all services
+are stopped.
+
 Durable controls include queued/processing capacity, job state, retry state, signed email-link
 verification inputs, expiration state, and storage reservations in SQLite. Storage reservations are
 created atomically before a job is accepted and account for source bytes, generated chapters,

@@ -70,7 +70,13 @@ export const contactRequestSchema = z.object({
         .string()
         .trim()
         .min(CONTACT_MESSAGE_MIN_LENGTH, "Tell us a bit more — at least 10 characters.")
-        .max(CONTACT_MESSAGE_MAX_LENGTH, "Please keep the message under 4000 characters.")
+        .max(CONTACT_MESSAGE_MAX_LENGTH, "Please keep the message under 4000 characters."),
+    /*
+     * Honeypot. The form renders this as a visually hidden "Website" input that humans never
+     * fill; naive bots that stuff every field do. The server accepts but silently discards
+     * submissions where it is non-empty, so bots cannot tell they were caught.
+     */
+    website: z.string().max(200).optional().default("")
 });
 
 export const contactResponseSchema = z.object({

@@ -36,7 +36,9 @@ const state = reactive({
     name: "",
     email: "",
     topic: undefined as ContactTopic | undefined,
-    message: ""
+    message: "",
+    // Honeypot — stays empty for humans; the server silently discards submissions that fill it.
+    website: ""
 });
 
 const isSubmitting = ref(false);
@@ -90,6 +92,7 @@ const sendAnother = () => {
     state.email = "";
     state.topic = undefined;
     state.message = "";
+    state.website = "";
     submitError.value = null;
     isSent.value = false;
 };
@@ -230,6 +233,19 @@ const sendAnother = () => {
                         :state="state"
                         class="space-y-6"
                         @submit="onSubmit">
+                        <div
+                            class="absolute -left-[9999px] h-px w-px overflow-hidden"
+                            aria-hidden="true">
+                            <label for="contact-website">Website</label>
+                            <input
+                                id="contact-website"
+                                v-model="state.website"
+                                type="text"
+                                name="website"
+                                tabindex="-1"
+                                autocomplete="off" />
+                        </div>
+
                         <UFormField
                             label="Name"
                             name="name">

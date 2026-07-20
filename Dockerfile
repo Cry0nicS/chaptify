@@ -17,6 +17,18 @@ RUN npm run postinstall
 RUN npm run build
 
 
+# === Production Dependencies Stage ===
+# Needs the C toolchain to compile better-sqlite3, but nothing from this stage ships except the
+# finished node_modules tree — the toolchain stays out of the runtime image.
+FROM node:22-alpine3.24 AS deps
+WORKDIR /app
+
+RUN apk add --no-cache python3 make g++
+COPY package*.json ./
+RUN npm ci --omit=dev --prefer-offline --ignore-scripts
+RUN npm rebuild better-sqlite3
+
+
 # === Production Stage ===
 FROM node:22-alpine3.24 AS production
 WORKDIR /app
@@ -25,11 +37,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NUXT_STORAGE_ROOT=/data/chaptify
 
-# Install only production dependencies
-RUN apk add --no-cache ffmpeg python3 make g++
+# FFmpeg is the only extra runtime requirement; dependencies are prebuilt in the deps stage.
+RUN apk add --no-cache ffmpeg
 COPY package*.json ./
-RUN npm ci --omit=dev --prefer-offline --ignore-scripts
-RUN npm rebuild better-sqlite3
+COPY --from=deps /app/node_modules ./node_modules
 
 # Copy production build artifacts
 COPY --from=builder /app/.output .output
