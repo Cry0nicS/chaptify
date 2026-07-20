@@ -30,7 +30,8 @@ interface UploadOptions {
     file: File;
     email: string;
     outputFormat: OutputFormat;
-    splitWithoutChapters: boolean;
+    // Split-only field; omit for conversions (the convert endpoint rejects unknown fields).
+    splitWithoutChapters?: boolean;
     timeoutMs?: number;
 }
 
@@ -62,6 +63,8 @@ interface MinimalXhr {
 
 interface UseJobUploadOptions {
     createXhr?: () => MinimalXhr;
+    /** Upload target. Defaults to the split endpoint; the converter passes "/api/convert". */
+    endpoint?: string;
 }
 
 const defaultProgress = (): UploadProgress => ({
@@ -102,6 +105,7 @@ export const useJobUpload = (options: UseJobUploadOptions = {}) => {
     const progress = ref<UploadProgress>(defaultProgress());
     const isUploading = ref(false);
     const activeXhr = ref<MinimalXhr | null>(null);
+    const endpoint = options.endpoint || "/api/jobs";
 
     const createXhr =
         options.createXhr ||
@@ -145,7 +149,9 @@ export const useJobUpload = (options: UseJobUploadOptions = {}) => {
         formData.append("file", file);
         formData.append("email", email.trim());
         formData.append("outputFormat", outputFormat);
-        formData.append("splitWithoutChapters", splitWithoutChapters ? "true" : "false");
+        if (splitWithoutChapters !== undefined) {
+            formData.append("splitWithoutChapters", splitWithoutChapters ? "true" : "false");
+        }
 
         isUploading.value = true;
         progress.value = defaultProgress();
@@ -251,7 +257,7 @@ export const useJobUpload = (options: UseJobUploadOptions = {}) => {
             xhr.addEventListener("error", listeners.error);
             xhr.addEventListener("abort", listeners.abort);
             xhr.addEventListener("timeout", listeners.timeout);
-            xhr.open("POST", "/api/jobs");
+            xhr.open("POST", endpoint);
             xhr.send(formData);
         });
     };

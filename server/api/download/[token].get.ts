@@ -1,17 +1,18 @@
 import {createReadStream} from "node:fs";
 import {stat} from "node:fs/promises";
-import {basename} from "node:path";
 import {createBackendContext} from "../../utils/backend/context";
+import {describeJobDownload} from "../../utils/backend/download";
 import {parseSignedDownloadToken, verifySignedDownloadToken} from "../../utils/backend/ids";
 import {ensurePathInside} from "../../utils/backend/paths";
 import {checkDownloadRateLimit, getClientIp} from "../../utils/backend/rate-limits";
 
 /**
- * GET /api/download/:token streams the ZIP referenced by a Mailgun completion email.
+ * GET /api/download/:token streams the artifact referenced by a Mailgun completion email (a ZIP for
+ * split jobs, a single audio file for convert jobs).
  *
  * The emailed link always carries an HMAC-signed token; it is parsed, matched to a ready, unexpired
  * job by its public ID, and its signature verified against the job's internal ID and expiry before
- * the stored ZIP path is rechecked against the private storage root and streamed.
+ * the stored artifact path is rechecked against the private storage root and streamed.
  */
 export default defineEventHandler(async (event) => {
     const {config, jobs} = await createBackendContext();
@@ -36,7 +37,7 @@ export default defineEventHandler(async (event) => {
     const job = signed ? jobs.findReadyByPublicId(signed.publicJobId, now) : null;
 
     if (
-        !job?.zipPath ||
+        !job?.outputPath ||
         !job.expiresAt ||
         !verifySignedDownloadToken({
             token,
@@ -48,20 +49,17 @@ export default defineEventHandler(async (event) => {
         throw createError({statusCode: 404, statusMessage: "Not found"});
     }
 
-    const zipPath = ensurePathInside(config.storageRoot, job.zipPath);
+    const artifactPath = ensurePathInside(config.storageRoot, job.outputPath);
 
     try {
-        await stat(zipPath);
+        await stat(artifactPath);
     } catch {
         throw createError({statusCode: 404, statusMessage: "Not found"});
     }
 
-    setHeader(event, "Content-Type", "application/zip");
-    setHeader(
-        event,
-        "Content-Disposition",
-        `attachment; filename="${basename(zipPath).replace(/"/g, "")}"`
-    );
+    const {filename, contentType} = describeJobDownload(job);
+    setHeader(event, "Content-Type", contentType);
+    setHeader(event, "Content-Disposition", `attachment; filename="${filename.replace(/"/g, "")}"`);
 
-    return sendStream(event, createReadStream(zipPath));
+    return sendStream(event, createReadStream(artifactPath));
 });

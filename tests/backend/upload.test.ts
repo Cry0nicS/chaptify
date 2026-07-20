@@ -3,6 +3,7 @@ import {Buffer} from "node:buffer";
 import {Readable} from "node:stream";
 import {describe, expect, it} from "vitest";
 import {
+    parseConvertFields,
     parseMultipartUpload,
     parseUploadFields,
     UPLOAD_FIELD_NAMES
@@ -95,5 +96,35 @@ describe("multipart upload field budget", () => {
         // A field beyond UPLOAD_FIELD_NAMES exceeds the parser's maxFields budget and is refused,
         // guarding against maxFields being set higher than the sanctioned field list.
         await expect(parse([...clientFields(), ["unexpected", "1"]])).rejects.toThrow();
+    });
+});
+
+describe("multipart convert field parsing", () => {
+    it("accepts a file, email, and a target format", async () => {
+        const parsed = await parse([
+            ["email", "reader@example.test"],
+            ["outputFormat", "m4b"]
+        ]);
+        const result = parseConvertFields(parsed);
+
+        expect(result.originalFilename).toBe("book.mp3");
+        expect(result.email).toBe("reader@example.test");
+        expect(result.outputFormat).toBe("m4b");
+    });
+
+    it("rejects a stray split-only field", async () => {
+        const parsed = await parse([
+            ["email", "reader@example.test"],
+            ["outputFormat", "m4b"],
+            ["splitWithoutChapters", "true"]
+        ]);
+
+        expect(() => parseConvertFields(parsed)).toThrow();
+    });
+
+    it("rejects a missing target format", async () => {
+        const parsed = await parse([["email", "reader@example.test"]]);
+
+        expect(() => parseConvertFields(parsed)).toThrow();
     });
 });

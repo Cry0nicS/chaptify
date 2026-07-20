@@ -37,6 +37,13 @@ export interface UploadFields {
     splitWithoutChapters: boolean;
 }
 
+export interface ConvertFields {
+    file: formidable.File;
+    originalFilename: string;
+    email: string;
+    outputFormat: string;
+}
+
 export const collectUploadedFilePaths = (files: formidable.Files): string[] =>
     Object.values(files)
         .flat()
@@ -193,5 +200,43 @@ export const parseUploadFields = (parsed: ParsedUpload): UploadFields => {
         outputFormatValues,
         // Multipart fields arrive as strings; treat only the explicit "true" as opt-in.
         splitWithoutChapters: splitWithoutChaptersValues[0] === "true"
+    };
+};
+
+/**
+ * Field validation for the standalone converter: exactly one audiobook file, one email, and one
+ * required target `outputFormat`. Unlike `parseUploadFields`, there is no `splitWithoutChapters`
+ * field, and the output format is mandatory (the converter always targets a specific format).
+ */
+export const parseConvertFields = (parsed: ParsedUpload): ConvertFields => {
+    const emailValues = singleValues(parsed.fields.email);
+    const {email} = fieldsSchema.parse({email: emailValues[0]});
+    const outputFormatValues = singleValues(parsed.fields.outputFormat);
+    const allowedFieldNames = new Set<string>(["email", "outputFormat"]);
+    const fileValues = parsed.files.file;
+    const files = Array.isArray(fileValues) ? fileValues : [fileValues];
+    const file = files[0];
+    const outputFormat = outputFormatValues[0];
+
+    if (
+        !file ||
+        files.length !== 1 ||
+        emailValues.length !== 1 ||
+        outputFormatValues.length !== 1 ||
+        !outputFormat ||
+        Object.keys(parsed.files).length !== 1 ||
+        Object.keys(parsed.fields).some((name) => !allowedFieldNames.has(name))
+    ) {
+        throw new PublicJobError(
+            "UNSUPPORTED_FILE_TYPE",
+            "Expected one file, an email, and a target format"
+        );
+    }
+
+    return {
+        file,
+        originalFilename: file.originalFilename || "audiobook",
+        email,
+        outputFormat
     };
 };

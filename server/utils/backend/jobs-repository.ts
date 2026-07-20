@@ -7,10 +7,17 @@ import type {
 import {serializePublicError} from "./errors";
 import {createUploadHistoryRepository} from "./upload-history-repository";
 
+/**
+ * Distinguishes the two job pipelines that share this table: `split` cuts an audiobook into
+ * per-chapter files and zips them; `convert` transcodes the whole file to another format.
+ */
+export type JobKind = "split" | "convert";
+
 export interface JobRecord {
     id: number;
     publicJobId: string;
     internalId: string;
+    kind: JobKind;
     displayFilename: string;
     sourceFormat: "mp3" | "m4b";
     outputFormat: "mp3" | "m4b";
@@ -33,7 +40,7 @@ export interface JobRecord {
     emailNextAttemptAt: string | null;
     emailLastError: string | null;
     emailMessageId: string | null;
-    zipPath: string | null;
+    outputPath: string | null;
     sourcePath: string;
     downloadTokenHash: string | null;
     browserJobAccessTokenHash: string | null;
@@ -43,6 +50,7 @@ export interface JobRecord {
 export interface CreateJobInput {
     publicJobId: string;
     internalId: string;
+    kind: JobKind;
     displayFilename: string;
     sourceFormat: "mp3" | "m4b";
     outputFormat: "mp3" | "m4b";
@@ -73,6 +81,7 @@ const rowToJob = (row: Record<string, unknown>): JobRecord => ({
     id: Number(row.id),
     publicJobId: String(row.public_job_id),
     internalId: String(row.internal_id),
+    kind: (row.kind === "convert" ? "convert" : "split") as JobKind,
     displayFilename: String(row.display_filename),
     sourceFormat: row.source_format as "mp3" | "m4b",
     outputFormat: (row.output_format ?? row.source_format) as "mp3" | "m4b",
@@ -100,7 +109,7 @@ const rowToJob = (row: Record<string, unknown>): JobRecord => ({
         row.email_next_attempt_at === null ? null : String(row.email_next_attempt_at),
     emailLastError: row.email_last_error === null ? null : String(row.email_last_error),
     emailMessageId: row.email_message_id === null ? null : String(row.email_message_id),
-    zipPath: row.zip_path === null ? null : String(row.zip_path),
+    outputPath: row.output_path === null ? null : String(row.output_path),
     sourcePath: String(row.source_path),
     downloadTokenHash: row.download_token_hash === null ? null : String(row.download_token_hash),
     browserJobAccessTokenHash:
@@ -122,6 +131,7 @@ export const createJobRepository = (database: Database.Database) => {
                     INSERT INTO jobs (
                         public_job_id,
                         internal_id,
+                        kind,
                         display_filename,
                         source_format,
                         output_format,
@@ -135,12 +145,13 @@ export const createJobRepository = (database: Database.Database) => {
                         browser_job_access_token_hash,
                         split_without_chapters
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?, ?)
                 `
                 )
                 .run(
                     input.publicJobId,
                     input.internalId,
+                    input.kind,
                     input.displayFilename,
                     input.sourceFormat,
                     input.outputFormat,
@@ -294,6 +305,7 @@ export const createJobRepository = (database: Database.Database) => {
                         INSERT INTO jobs (
                             public_job_id,
                             internal_id,
+                            kind,
                             display_filename,
                             source_format,
                             output_format,
@@ -307,12 +319,13 @@ export const createJobRepository = (database: Database.Database) => {
                             browser_job_access_token_hash,
                             split_without_chapters
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, 'pending', ?, ?, ?)
                     `
                     )
                     .run(
                         input.publicJobId,
                         input.internalId,
+                        input.kind,
                         input.displayFilename,
                         input.sourceFormat,
                         input.outputFormat,
@@ -611,7 +624,7 @@ export const createJobRepository = (database: Database.Database) => {
          */
         markReady(
             internalId: string,
-            zipPath: string,
+            outputPath: string,
             tokenHash: string | null,
             completedAt: string,
             expiresAt: string
@@ -624,7 +637,7 @@ export const createJobRepository = (database: Database.Database) => {
                         progress = 100,
                         completed_at = ?,
                         expires_at = ?,
-                        zip_path = ?,
+                        output_path = ?,
                         download_token_hash = ?,
                         email_next_attempt_at = ?,
                         public_error_code = NULL,
@@ -632,7 +645,7 @@ export const createJobRepository = (database: Database.Database) => {
                     WHERE internal_id = ? AND status = 'processing'
                 `
                 )
-                .run(completedAt, expiresAt, zipPath, tokenHash, completedAt, internalId);
+                .run(completedAt, expiresAt, outputPath, tokenHash, completedAt, internalId);
             history.syncFromJobs();
 
             return result.changes === 1;
@@ -835,7 +848,7 @@ export const createJobRepository = (database: Database.Database) => {
                         download_token_hash = NULL,
                         browser_job_access_token_hash = NULL,
                         email = NULL,
-                        zip_path = NULL,
+                        output_path = NULL,
                         completed_at = COALESCE(completed_at, ?)
                     WHERE internal_id = ?
                 `

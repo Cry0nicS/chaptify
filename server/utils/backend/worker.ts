@@ -9,7 +9,9 @@ import {PublicJobError} from "./errors";
 import {createSignedDownloadToken} from "./ids";
 import {createMailgunService} from "./mailgun";
 import {
+    convertAudio as convertAudioDefault,
     inspectAudioFile as inspectAudioFileDefault,
+    probeForConversion as probeForConversionDefault,
     splitChapters as splitChaptersDefault
 } from "./media";
 import {ensurePathInside, jobDirectory} from "./paths";
@@ -86,6 +88,8 @@ export interface ProcessJobDependencies {
     inspectAudioFile?: typeof inspectAudioFileDefault;
     splitChapters?: typeof splitChaptersDefault;
     createChapterZip?: typeof createChapterZipDefault;
+    probeForConversion?: typeof probeForConversionDefault;
+    convertAudio?: typeof convertAudioDefault;
     deliverReadyEmail?: typeof deliverReadyEmail;
     beforeMarkReady?: () => Promise<void> | void;
     /**
@@ -201,6 +205,8 @@ export const processJob = async (
     const inspectAudioFile = dependencies.inspectAudioFile || inspectAudioFileDefault;
     const splitChapters = dependencies.splitChapters || splitChaptersDefault;
     const createChapterZip = dependencies.createChapterZip || createChapterZipDefault;
+    const probeForConversion = dependencies.probeForConversion || probeForConversionDefault;
+    const convertAudio = dependencies.convertAudio || convertAudioDefault;
     const deliverEmail = dependencies.deliverReadyEmail || deliverReadyEmail;
     const directory = jobDirectory(config.storageRoot, job.internalId);
     let chaptersDirectory: string | null = null;
@@ -237,43 +243,75 @@ export const processJob = async (
         await makeDirectory(outputDirectory, {recursive: true, mode: 0o700});
 
         jobs.updateProgress(job.internalId, 10);
-        const inspection = await inspectAudioFile(job.sourcePath, job.sourceFormat, mediaOptions);
-        jobs.recordHistoryInspection(job.publicJobId, {
-            durationSeconds: inspection.duration,
-            chapterCount: inspection.chapters.length,
-            author: inspection.author,
-            embeddedTitle: inspection.bookTitle,
-            segmented: inspection.segmented
-        });
-        jobs.updateProgress(job.internalId, 20, 0, inspection.chapters.length);
-        const chapterPaths = await splitChapters(
-            config.storageRoot,
-            job.sourcePath,
-            chaptersDirectory,
-            inspection,
-            job.outputFormat,
-            (currentChapter, totalChapters) => {
-                const progress = 20 + Math.floor((currentChapter / totalChapters) * 55);
-                jobs.updateProgress(job.internalId, progress, currentChapter, totalChapters);
-            },
-            mediaOptions
-        );
 
-        jobs.updateProgress(job.internalId, 82);
-        const archiveName = `${basename(job.displayFilename, `.${job.sourceFormat}`) || "chapters"}.zip`;
-        const zipPath = await createChapterZip(
-            config.storageRoot,
-            outputDirectory,
-            archiveName,
-            chapterPaths,
-            {
-                signal: abortController.signal
+        let readyArtifactPath: string;
+
+        if (job.kind === "convert") {
+            // Whole-file transcode to the other format, preserving metadata/cover/chapters. No
+            // chapter requirement — this path accepts any valid mp3/m4b (songs, clips, audiobooks).
+            const probe = await probeForConversion(job.sourcePath, mediaOptions);
+            jobs.recordHistoryInspection(job.publicJobId, {
+                durationSeconds: probe.duration,
+                chapterCount: probe.chapterCount,
+                author: probe.author,
+                embeddedTitle: probe.bookTitle,
+                segmented: false
+            });
+            jobs.updateProgress(job.internalId, 40);
+            readyArtifactPath = await convertAudio(
+                config.storageRoot,
+                job.sourcePath,
+                outputDirectory,
+                job.outputFormat,
+                probe.hasCoverArt,
+                mediaOptions
+            );
+            jobs.updateProgress(job.internalId, 90);
+        } else {
+            const inspection = await inspectAudioFile(
+                job.sourcePath,
+                job.sourceFormat,
+                mediaOptions
+            );
+            jobs.recordHistoryInspection(job.publicJobId, {
+                durationSeconds: inspection.duration,
+                chapterCount: inspection.chapters.length,
+                author: inspection.author,
+                embeddedTitle: inspection.bookTitle,
+                segmented: inspection.segmented
+            });
+            jobs.updateProgress(job.internalId, 20, 0, inspection.chapters.length);
+            const chapterPaths = await splitChapters(
+                config.storageRoot,
+                job.sourcePath,
+                chaptersDirectory,
+                inspection,
+                job.outputFormat,
+                (currentChapter, totalChapters) => {
+                    const progress = 20 + Math.floor((currentChapter / totalChapters) * 55);
+                    jobs.updateProgress(job.internalId, progress, currentChapter, totalChapters);
+                },
+                mediaOptions
+            );
+
+            jobs.updateProgress(job.internalId, 82);
+            const archiveName = `${basename(job.displayFilename, `.${job.sourceFormat}`) || "chapters"}.zip`;
+            const zipPath = await createChapterZip(
+                config.storageRoot,
+                outputDirectory,
+                archiveName,
+                chapterPaths,
+                {
+                    signal: abortController.signal
+                }
+            );
+            const zipStats = await statPath(zipPath);
+            if (zipStats.size === 0) {
+                throw new PublicJobError("ZIP_CREATION_FAILED", "ZIP archive was empty");
             }
-        );
-        const zipStats = await statPath(zipPath);
-        if (zipStats.size === 0) {
-            throw new PublicJobError("ZIP_CREATION_FAILED", "ZIP archive was empty");
+            readyArtifactPath = zipPath;
         }
+
         await dependencies.beforeMarkReady?.();
         const completedAt = new Date();
         const expiresAt = new Date(
@@ -281,7 +319,7 @@ export const processJob = async (
         ).toISOString();
         const markedReady = jobs.markReady(
             job.internalId,
-            zipPath,
+            readyArtifactPath,
             null,
             completedAt.toISOString(),
             expiresAt

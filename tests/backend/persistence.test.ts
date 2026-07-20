@@ -174,8 +174,8 @@ describe("tokens and persistence", () => {
 
         const ready = jobs.findByInternalId("internal-job-id");
         expect(ready?.status).toBe("ready");
-        expect(ready?.zipPath).toEqual(expect.any(String));
-        await expect(access(ready?.zipPath || "")).resolves.toBeUndefined();
+        expect(ready?.outputPath).toEqual(expect.any(String));
+        await expect(access(ready?.outputPath || "")).resolves.toBeUndefined();
         expect(deliverReadyEmailMock).toHaveBeenCalledTimes(1);
         expect(jobs.getActiveStorageReservation("internal-job-id")).toBeDefined();
     });
@@ -226,7 +226,7 @@ describe("tokens and persistence", () => {
 
         const ready = jobs.findByInternalId("internal-job-id");
         expect(ready?.status).toBe("ready");
-        await expect(access(ready?.zipPath || "")).resolves.toBeUndefined();
+        await expect(access(ready?.outputPath || "")).resolves.toBeUndefined();
         expect(deliverReadyEmailMock).toHaveBeenCalledTimes(1);
     });
 

@@ -79,7 +79,7 @@ export default defineEventHandler(async (event) => {
         new Date().toISOString()
     );
 
-    if (!job?.zipPath || !job.expiresAt) {
+    if (!job?.outputPath || !job.expiresAt) {
         throw createError({statusCode: 404, statusMessage: "Not found"});
     }
 

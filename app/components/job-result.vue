@@ -4,17 +4,36 @@ import {computed} from "vue";
 import {guidanceForErrorCode} from "../utils/api-errors";
 import {formatExpiration} from "../utils/date-format";
 
-const props = defineProps<{
-    job: JobStatusResponse;
-    canBrowserDownload?: boolean;
-    browserDownloadError?: string | null;
-    isBrowserDownloadStarting?: boolean;
-}>();
+const props = withDefaults(
+    defineProps<{
+        job: JobStatusResponse;
+        kind?: "split" | "convert";
+        canBrowserDownload?: boolean;
+        browserDownloadError?: string | null;
+        isBrowserDownloadStarting?: boolean;
+        canDelete?: boolean;
+        isDeleting?: boolean;
+        deleted?: boolean;
+    }>(),
+    {kind: "split"}
+);
 
 const emit = defineEmits<{
     download: [];
     startOver: [];
+    delete: [];
 }>();
+
+const isConvert = computed(() => props.kind === "convert");
+const artifactNoun = computed(() => (isConvert.value ? "converted file" : "chapter ZIP"));
+const readyDescription = computed(
+    () =>
+        `Your ${artifactNoun.value} is ready. You can download it here in this tab, and the emailed temporary link will continue to work.`
+);
+const downloadLabel = computed(() => (isConvert.value ? "Download file" : "Download ZIP"));
+const startOverLabel = computed(() =>
+    isConvert.value ? "Convert another file" : "Process another audiobook"
+);
 
 const expiration = computed(() => formatExpiration(props.job.expiresAt));
 const failedGuidance = computed(() =>
@@ -35,26 +54,35 @@ const emailTitle = computed(() => {
 });
 const emailMessage = computed(() => {
     if (props.job.emailStatus === "sent") {
-        return "The email contains the secure download link for your ZIP.";
+        return "The email contains the secure download link.";
     }
 
     if (props.job.emailStatus === "failed") {
-        return "The audiobook was processed successfully, but the email could not be delivered. There is no resend option yet; start over with a verified address if you need a new email.";
+        return "The file was processed successfully, but the email could not be delivered. There is no resend option yet; start over with a verified address if you need a new email.";
     }
 
-    return "The ZIP is ready and the server is still trying to send the email.";
+    return "The download is ready and the server is still trying to send the email.";
 });
 </script>
 
 <template>
     <section class="border-default bg-default space-y-4 rounded-lg border p-5">
-        <template v-if="job.status === 'ready'">
+        <template v-if="deleted">
+            <UAlert
+                color="neutral"
+                variant="soft"
+                icon="i-lucide-trash-2"
+                title="File deleted"
+                description="The file and its download links have been removed from our servers." />
+        </template>
+
+        <template v-else-if="job.status === 'ready'">
             <UAlert
                 color="success"
                 variant="soft"
                 icon="i-lucide-circle-check"
-                title="Audiobook processed"
-                description="Your chapter ZIP is ready. You can download it here in this tab, and the emailed temporary link will continue to work." />
+                :title="isConvert ? 'File converted' : 'Audiobook processed'"
+                :description="readyDescription" />
 
             <div
                 v-if="canBrowserDownload"
@@ -65,7 +93,19 @@ const emailMessage = computed(() => {
                     icon="i-lucide-download"
                     :loading="isBrowserDownloadStarting"
                     @click="emit('download')">
-                    Download ZIP
+                    {{ downloadLabel }}
+                </UButton>
+
+                <UButton
+                    v-if="canDelete"
+                    type="button"
+                    size="lg"
+                    color="neutral"
+                    variant="soft"
+                    icon="i-lucide-trash-2"
+                    :loading="isDeleting"
+                    @click="emit('delete')">
+                    Delete file now
                 </UButton>
             </div>
 
@@ -86,11 +126,11 @@ const emailMessage = computed(() => {
 
             <p class="text-muted text-sm">
                 <span v-if="expiration">
-                    The download link expires {{ expiration }}. The ZIP will be deleted
+                    The download link expires {{ expiration }}. The file will be deleted
                     automatically.
                 </span>
                 <span v-else>
-                    The ZIP will be deleted automatically after the configured retention period.
+                    The file will be deleted automatically after the configured retention period.
                 </span>
             </p>
         </template>
@@ -110,7 +150,7 @@ const emailMessage = computed(() => {
                 variant="soft"
                 icon="i-lucide-clock"
                 title="Download expired"
-                description="The generated file and email link have expired. Upload the audiobook again to create a fresh ZIP." />
+                description="The generated file and email link have expired. Upload again to create a fresh download." />
         </template>
 
         <UButton
@@ -118,7 +158,7 @@ const emailMessage = computed(() => {
             size="lg"
             icon="i-lucide-refresh-cw"
             @click="emit('startOver')">
-            Process another audiobook
+            {{ startOverLabel }}
         </UButton>
     </section>
 </template>

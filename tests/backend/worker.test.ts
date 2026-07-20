@@ -19,6 +19,7 @@ describe("worker shutdown and failure handling", () => {
         jobs.createJob({
             publicJobId: "shutdown-public-id",
             internalId: "shutdown-job",
+            kind: "split",
             displayFilename: "Book.m4b",
             sourceFormat: "m4b",
             outputFormat: "m4b",
