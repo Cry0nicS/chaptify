@@ -81,6 +81,8 @@ const rowToJob = (row: Record<string, unknown>): JobRecord => ({
     id: Number(row.id),
     publicJobId: String(row.public_job_id),
     internalId: String(row.internal_id),
+    // Normalize to a known kind: anything that is not "convert" (including a legacy NULL from
+    // before this column existed) falls back to the safe "split" default the column also uses.
     kind: (row.kind === "convert" ? "convert" : "split") as JobKind,
     displayFilename: String(row.display_filename),
     sourceFormat: row.source_format as "mp3" | "m4b",

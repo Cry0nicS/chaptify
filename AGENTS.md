@@ -238,7 +238,9 @@ Mailgun is the transactional email provider and `mailgun.js` is already installe
 
 ## Audiobook processing
 
-Chaptify accepts one M4B or MP3 audiobook and produces a ZIP containing one audio file per detected chapter.
+Chaptify accepts one M4B or MP3 audiobook and, depending on the chosen flow, either splits it into a ZIP containing one audio file per detected chapter (`split` jobs, `POST /api/jobs`) or converts the whole file to the other format — mp3 ⇄ m4b (`convert` jobs, `POST /api/convert`). Both flows share the same durable-job pipeline, distinguished by a `kind` column.
+
+The rules below describe the split flow. Conversion differs deliberately: it has no chapter requirement (any valid mp3/m4b is accepted, including songs and clips), always re-encodes (the two formats never share a codec), and is a faithful repackage that *preserves* metadata, cover art, and embedded chapters rather than stripping them. It produces a single output file, not a ZIP.
 
 - Prefer embedded chapter metadata.
 - Inspect media using `ffprobe`.
