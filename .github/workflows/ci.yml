@@ -1,4 +1,4 @@
-name: ci
+name: CI
 
 on:
   push:
@@ -6,65 +6,120 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  NODE_VERSION: 22
+
+# Cancel superseded runs on the same branch/PR so a new push doesn't queue behind stale jobs.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  ci:
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        node: [22]
-
+  lint:
+    name: Lint & format
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
       - name: Install node
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.node }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Check formatting
+        run: npm run format-check
+      - name: Lint
+        run: npm run lint
 
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Install node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run type-check
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Install node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
       - name: Install media tools
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-
       - name: Install dependencies
         run: npm ci
-
-      - name: Check formatting
-        run: npm run format-check
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Typecheck
-        run: npm run type-check
-
       - name: Test
         run: npm run test
 
+  build:
+    name: Build application
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Install node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: Build application
         run: npm run build
 
+  docker:
+    name: Docker Compose smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      # The smoke script uses only Node built-ins, so no npm ci is needed on the host; the
+      # Dockerfile builds and installs everything inside the image.
+      - name: Install node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - name: Create empty env file for compose validation
         run: |
           touch .env
           echo "NUXT_DOWNLOAD_SIGNING_SECRET=ci-download-signing-secret-with-32-chars" >> .env
-
       - name: Validate docker compose
         run: docker compose config
-
       - name: Build Docker Compose stack
         run: docker compose build
-
       - name: Start Docker Compose stack
         run: docker compose up -d
-
       - name: Smoke Docker Compose stack
         run: npm run smoke:docker
-
       - name: Stop Docker Compose stack
         if: always()
         run: docker compose down -v
+
+  # Single stable check to point branch protection at: green only when every job above passed.
+  ci-complete:
+    name: CI complete
+    if: always()
+    needs: [lint, typecheck, test, build, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all jobs succeeded
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
