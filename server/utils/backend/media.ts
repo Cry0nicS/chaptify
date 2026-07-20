@@ -31,9 +31,17 @@ const OUTPUT_SPECS: Record<
 const DEFAULT_MEDIA_LIMITS = {
     maxAudiobookDurationSeconds: 86_400,
     maxChapters: 300,
+    fallbackSegmentSeconds: 1_800,
+    minSegmentedDurationSeconds: 3_600,
     ffprobeTimeoutMs: 30_000,
     ffmpegChapterTimeoutMs: 20 * 60_000
 };
+
+/**
+ * A trailing segment shorter than this is folded into the previous part instead of becoming its
+ * own file, so fixed-length splitting never produces a pointless few-second final "Part".
+ */
+const SEGMENT_TAIL_MERGE_SECONDS = 60;
 
 export interface MediaProcessingOptions {
     maxAudiobookDurationSeconds?: number;
@@ -42,6 +50,10 @@ export interface MediaProcessingOptions {
     ffmpegChapterTimeoutMs?: number;
     deadlineMs?: number;
     signal?: AbortSignal;
+    /** When true and the file has no embedded chapters, split it into fixed-length segments. */
+    segmentWithoutChapters?: boolean;
+    fallbackSegmentSeconds?: number;
+    minSegmentedDurationSeconds?: number;
 }
 
 const ffprobeChapterSchema = z.object({
@@ -81,7 +93,39 @@ export interface MediaInspection {
     chapters: ChapterInfo[];
     bookTitle: string | null;
     author: string | null;
+    /** True when `chapters` were synthesized by fixed-length fallback rather than read from the file. */
+    segmented: boolean;
 }
+
+/**
+ * Divides a total duration into contiguous fixed-length parts titled "Part N".
+ *
+ * A trailing part shorter than SEGMENT_TAIL_MERGE_SECONDS is merged into the one before it so the
+ * split never ends on a sliver. Callers must guarantee `duration > 0` and `segmentSeconds > 0`.
+ */
+export const synthesizeSegments = (duration: number, segmentSeconds: number): ChapterInfo[] => {
+    const segments: ChapterInfo[] = [];
+    let start = 0;
+
+    while (start < duration) {
+        const end = Math.min(start + segmentSeconds, duration);
+        segments.push({title: `Part ${segments.length + 1}`, start, end});
+        start = end;
+    }
+
+    const lastSegment = segments.at(-1);
+    if (
+        segments.length >= 2 &&
+        lastSegment &&
+        lastSegment.end - lastSegment.start < SEGMENT_TAIL_MERGE_SECONDS
+    ) {
+        const previous = segments[segments.length - 2]!;
+        previous.end = lastSegment.end;
+        segments.pop();
+    }
+
+    return segments;
+};
 
 /** Reads a non-empty string tag case-insensitively; ffprobe tag casing varies by container. */
 const readFormatTag = (tags: Record<string, unknown> | undefined, name: string): string | null => {
@@ -226,19 +270,37 @@ export const inspectAudioFile = async (
         );
     }
 
+    let segmented = false;
+    let chapters: ChapterInfo[];
+
     if (parsed.chapters.length === 0) {
-        throw new PublicJobError("NO_CHAPTERS_FOUND");
+        // No embedded chapters. Either fail (default) or, when the caller opted in and the file is
+        // long enough to be a real audiobook, split it into fixed-length parts instead.
+        if (!options.segmentWithoutChapters) {
+            throw new PublicJobError("NO_CHAPTERS_FOUND");
+        }
+
+        const minSegmentedDurationSeconds =
+            options.minSegmentedDurationSeconds ?? DEFAULT_MEDIA_LIMITS.minSegmentedDurationSeconds;
+        if (parsed.format.duration < minSegmentedDurationSeconds) {
+            throw new PublicJobError("AUDIOBOOK_TOO_SHORT");
+        }
+
+        const fallbackSegmentSeconds =
+            options.fallbackSegmentSeconds ?? DEFAULT_MEDIA_LIMITS.fallbackSegmentSeconds;
+        chapters = synthesizeSegments(parsed.format.duration, fallbackSegmentSeconds);
+        segmented = true;
+    } else {
+        chapters = parsed.chapters.map((chapter) => ({
+            title: chapter.tags?.title || null,
+            start: chapter.start_time,
+            end: chapter.end_time
+        }));
     }
 
-    if (parsed.chapters.length > limits.maxChapters) {
+    if (chapters.length > limits.maxChapters) {
         throw new PublicJobError("INVALID_CHAPTER_METADATA", "Too many chapters");
     }
-
-    const chapters = parsed.chapters.map((chapter) => ({
-        title: chapter.tags?.title || null,
-        start: chapter.start_time,
-        end: chapter.end_time
-    }));
 
     validateChapters(chapters, parsed.format.duration);
     assertSupportedInput(audioStream.codec_name, parsed.format.format_name);
@@ -253,7 +315,8 @@ export const inspectAudioFile = async (
         audioCodec: audioStream.codec_name,
         chapters,
         bookTitle,
-        author
+        author,
+        segmented
     };
 };
 

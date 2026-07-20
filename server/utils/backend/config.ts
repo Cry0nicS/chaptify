@@ -40,6 +40,10 @@ const runtimeConfigSchema = z.object({
     jobRetentionHours: numericEnvSchema(12, 1),
     maxAudiobookDurationSeconds: numericEnvSchema(86_400, 1),
     maxChapters: numericEnvSchema(300, 1),
+    // No-chapters fallback: segment length, and the minimum duration that qualifies a file as an
+    // audiobook eligible for it (guards against splitting a song into pointless parts).
+    fallbackSegmentSeconds: numericEnvSchema(1_800, 1),
+    minSegmentedDurationSeconds: numericEnvSchema(3_600, 1),
     jobProcessingTimeoutSeconds: numericEnvSchema(14_400, 1),
     ffprobeTimeoutSeconds: numericEnvSchema(30, 1),
     ffmpegChapterTimeoutSeconds: numericEnvSchema(1_200, 1),

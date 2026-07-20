@@ -49,6 +49,8 @@ export default defineNuxtConfig({
         jobRetentionHours: "12",
         maxAudiobookDurationSeconds: "108000",
         maxChapters: "300",
+        fallbackSegmentSeconds: "1800",
+        minSegmentedDurationSeconds: "3600",
         jobProcessingTimeoutSeconds: "14400",
         ffprobeTimeoutSeconds: "30",
         ffmpegChapterTimeoutSeconds: "1200",

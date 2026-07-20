@@ -55,6 +55,8 @@ export const makeConfig = (storageRoot: string): BackendConfig => ({
     jobRetentionHours: DEFAULT_JOB_RETENTION_HOURS,
     maxAudiobookDurationSeconds: 86_400,
     maxChapters: 300,
+    fallbackSegmentSeconds: 1_800,
+    minSegmentedDurationSeconds: 3_600,
     jobProcessingTimeoutSeconds: 14_400,
     ffprobeTimeoutSeconds: 30,
     ffmpegChapterTimeoutSeconds: 1_200,
@@ -93,7 +95,8 @@ export const createQueuedJob = (
         email: "reader@example.test",
         sourcePath: join(storageRoot, "jobs", "internal-job-id", "source", "source.m4b"),
         createdAt: new Date().toISOString(),
-        browserJobAccessTokenHash: hashBrowserJobAccessToken("browser-token")
+        browserJobAccessTokenHash: hashBrowserJobAccessToken("browser-token"),
+        splitWithoutChapters: false
     });
 };
 
@@ -172,6 +175,42 @@ export const createSyntheticAudiobook = async (
             "1",
             "-c",
             "copy",
+            outputPath
+        ],
+        30_000
+    );
+
+    return outputPath;
+};
+
+/**
+ * Generates a plain audio file with NO embedded chapters, used to exercise the no-chapters
+ * fallback. `durationSeconds` lets a test sit above or below the segmenting duration guard.
+ */
+export const createChapterlessAudio = async (
+    root: string,
+    format: "mp3" | "m4b",
+    durationSeconds: number
+): Promise<string> => {
+    await requireFfmpeg();
+    const outputPath = join(root, `chapterless.${format}`);
+
+    await runProcess(
+        "ffmpeg",
+        [
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            `sine=frequency=440:duration=${durationSeconds}`,
+            "-vn",
+            "-sn",
+            "-dn",
+            "-c:a",
+            format === "mp3" ? "libmp3lame" : "aac",
             outputPath
         ],
         30_000

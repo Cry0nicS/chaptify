@@ -147,7 +147,8 @@ describe("tokens and persistence", () => {
                 audioCodec: "aac",
                 chapters: [{title: "Intro", start: 0, end: 2}],
                 bookTitle: null,
-                author: null
+                author: null,
+                segmented: false
             }),
             splitChapters: async (_root, _source, chaptersDirectory) => {
                 const chapterPath = join(chaptersDirectory, "01 - Intro.m4b");
@@ -198,7 +199,8 @@ describe("tokens and persistence", () => {
                 audioCodec: "aac",
                 chapters: [{title: "Intro", start: 0, end: 2}],
                 bookTitle: null,
-                author: null
+                author: null,
+                segmented: false
             }),
             splitChapters: async (_root, _source, chaptersDirectory) => {
                 const chapterPath = join(chaptersDirectory, "01 - Intro.m4b");
@@ -248,7 +250,8 @@ describe("tokens and persistence", () => {
                 audioCodec: "aac",
                 chapters: [{title: "Intro", start: 0, end: 2}],
                 bookTitle: null,
-                author: null
+                author: null,
+                segmented: false
             }),
             splitChapters: async (_root, _source, chaptersDirectory) => {
                 const chapterPath = join(chaptersDirectory, "01 - Intro.m4b");
@@ -311,7 +314,8 @@ describe("tokens and persistence", () => {
                     audioCodec: "aac",
                     chapters: [{title: "Intro", start: 0, end: 2}],
                     bookTitle: null,
-                    author: null
+                    author: null,
+                    segmented: false
                 }),
                 splitChapters: async (_root, _source, chaptersDirectory) => {
                     const chapterPath = join(chaptersDirectory, "01 - Intro.m4b");

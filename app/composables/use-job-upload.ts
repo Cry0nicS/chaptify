@@ -30,6 +30,7 @@ interface UploadOptions {
     file: File;
     email: string;
     outputFormat: OutputFormat;
+    splitWithoutChapters: boolean;
     timeoutMs?: number;
 }
 
@@ -124,6 +125,7 @@ export const useJobUpload = (options: UseJobUploadOptions = {}) => {
         file,
         email,
         outputFormat,
+        splitWithoutChapters,
         timeoutMs = 0
     }: UploadOptions): Promise<UploadResult> => {
         if (isUploading.value) {
@@ -143,6 +145,7 @@ export const useJobUpload = (options: UseJobUploadOptions = {}) => {
         formData.append("file", file);
         formData.append("email", email.trim());
         formData.append("outputFormat", outputFormat);
+        formData.append("splitWithoutChapters", splitWithoutChapters ? "true" : "false");
 
         isUploading.value = true;
         progress.value = defaultProgress();

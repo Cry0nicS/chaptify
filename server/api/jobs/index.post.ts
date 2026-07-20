@@ -1,7 +1,4 @@
-import type {H3Event} from "h3";
-import {mkdir, rm} from "node:fs/promises";
-import {join} from "node:path";
-import formidable from "formidable";
+import {rm} from "node:fs/promises";
 import {z} from "zod";
 import {outputFormatSchema, uploadMetadataSchema} from "../../../shared/utils/schemas";
 import {createBackendContext} from "../../utils/backend/context";
@@ -12,7 +9,6 @@ import {
     createPublicId,
     hashBrowserJobAccessToken
 } from "../../utils/backend/ids";
-import {ensurePathInside} from "../../utils/backend/paths";
 import {
     checkJobCreationLimit,
     checkUploadRateLimit,
@@ -27,123 +23,13 @@ import {
     detectUploadExtension,
     getAvailableStorageBytes
 } from "../../utils/backend/storage";
-
-const fieldsSchema = z.object({
-    email: z.string().email().max(320)
-});
-const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
-
-const collectUploadedFilePaths = (files: formidable.Files): string[] =>
-    Object.values(files)
-        .flat()
-        .filter((file): file is formidable.File => Boolean(file?.filepath))
-        .map((file) => file.filepath);
-
-const parseMultipartUpload = async (
-    event: H3Event,
-    storageRoot: string,
-    maxUploadBytes: number,
-    uploadIdleTimeoutMs: number,
-    onFileBegin: (path: string) => void
-) => {
-    const uploadDirectory = ensurePathInside(storageRoot, join(storageRoot, "uploads"));
-    await mkdir(uploadDirectory, {recursive: true, mode: 0o700});
-
-    const form = formidable({
-        uploadDir: uploadDirectory,
-        maxFields: 2,
-        maxFieldsSize: 512,
-        maxFiles: 1,
-        maxFileSize: maxUploadBytes,
-        multiples: false,
-        allowEmptyFiles: false,
-        filter(part) {
-            if (part.name !== "file") {
-                return false;
-            }
-
-            return Boolean(part.originalFilename && detectUploadExtension(part.originalFilename));
-        },
-        filename() {
-            return `${crypto.randomUUID()}.upload`;
-        }
-    });
-
-    const request = event.node.req;
-
-    return await new Promise<{
-        fields: formidable.Fields;
-        files: formidable.Files;
-    }>((resolve, reject) => {
-        let settled = false;
-
-        function onClose() {
-            // Release the slot immediately if the client disconnects before the body finishes,
-            // rather than waiting for a server-level request timeout.
-            if (!request.complete) {
-                finish(new Error("Upload connection closed before completion"));
-            }
-        }
-
-        function finish(
-            error: unknown,
-            result?: {fields: formidable.Fields; files: formidable.Files}
-        ) {
-            if (settled) {
-                return;
-            }
-
-            settled = true;
-            request.setTimeout(0);
-            request.off("close", onClose);
-
-            if (error || !result) {
-                reject(error instanceof Error ? error : new Error(String(error)));
-                return;
-            }
-
-            resolve(result);
-        }
-
-        // Abort a stalled upload so a slow client cannot hold a scarce concurrent-upload slot. The
-        // socket timeout resets on every received chunk, so it only fires on genuine inactivity and
-        // never penalizes a large but steadily-transferring upload.
-        if (uploadIdleTimeoutMs > 0) {
-            request.setTimeout(uploadIdleTimeoutMs, () => {
-                request.destroy(new Error("Upload idle timeout exceeded"));
-            });
-        }
-
-        request.on("close", onClose);
-
-        form.on("fileBegin", (_name, file) => {
-            if (file.filepath) {
-                onFileBegin(file.filepath);
-            }
-        });
-
-        form.parse(request, (error, fields, files) => {
-            if (error) {
-                finish(error);
-                return;
-            }
-
-            finish(null, {fields, files});
-        });
-    });
-};
-
-const estimateUploadReservationBytes = (event: H3Event, maxUploadBytes: number): number => {
-    const contentLengthHeader = getHeader(event, "content-length");
-    const contentLength =
-        typeof contentLengthHeader === "string" ? Number(contentLengthHeader) : Number.NaN;
-
-    if (Number.isFinite(contentLength) && contentLength > 0) {
-        return Math.min(contentLength, maxUploadBytes + MULTIPART_OVERHEAD_BYTES);
-    }
-
-    return maxUploadBytes + MULTIPART_OVERHEAD_BYTES;
-};
+import {
+    collectUploadedFilePaths,
+    estimateUploadReservationBytes,
+    MULTIPART_OVERHEAD_BYTES,
+    parseMultipartUpload,
+    parseUploadFields
+} from "../../utils/backend/upload-request";
 
 /**
  * POST /api/jobs creates an asynchronous audiobook-processing job.
@@ -258,38 +144,10 @@ export default defineEventHandler(async (event) => {
             }
         );
         tempPaths = collectUploadedFilePaths(parsed.files);
-        const emailValues = Array.isArray(parsed.fields.email)
-            ? parsed.fields.email
-            : [parsed.fields.email];
-        const emailValue = emailValues[0];
-        const {email} = fieldsSchema.parse({email: emailValue});
-        const rawOutputFormat = parsed.fields.outputFormat;
-        const outputFormatValues = Array.isArray(rawOutputFormat)
-            ? rawOutputFormat
-            : rawOutputFormat === undefined
-              ? []
-              : [rawOutputFormat];
-        const allowedFieldNames = new Set(["email", "outputFormat"]);
-        const fileValues = parsed.files.file;
-        const files = Array.isArray(fileValues) ? fileValues : [fileValues];
-        const file = files[0];
-
-        if (
-            !file ||
-            files.length !== 1 ||
-            emailValues.length !== 1 ||
-            outputFormatValues.length > 1 ||
-            Object.keys(parsed.files).length !== 1 ||
-            Object.keys(parsed.fields).some((name) => !allowedFieldNames.has(name))
-        ) {
-            throw new PublicJobError(
-                "UNSUPPORTED_FILE_TYPE",
-                "Expected one file, an email, and an optional output format"
-            );
-        }
+        const {file, originalFilename, email, outputFormatValues, splitWithoutChapters} =
+            parseUploadFields(parsed);
 
         tempPath = file.filepath;
-        const originalFilename = file.originalFilename || "audiobook";
         const extension = detectUploadExtension(originalFilename);
         if (!extension) {
             throw new PublicJobError("UNSUPPORTED_FILE_TYPE");
@@ -308,7 +166,8 @@ export default defineEventHandler(async (event) => {
             fileName: originalFilename,
             fileSize,
             extension,
-            outputFormat
+            outputFormat,
+            splitWithoutChapters
         });
 
         if (!tempPath) {
@@ -356,7 +215,8 @@ export default defineEventHandler(async (event) => {
                 email,
                 sourcePath: storedUpload.sourcePath,
                 createdAt,
-                browserJobAccessTokenHash: hashBrowserJobAccessToken(jobAccessToken)
+                browserJobAccessTokenHash: hashBrowserJobAccessToken(jobAccessToken),
+                splitWithoutChapters
             },
             config.maxQueuedJobs
         );

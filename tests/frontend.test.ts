@@ -411,12 +411,17 @@ describe("job status composable", () => {
 
 describe("native browser download", () => {
     it("creates a grant before native navigation and does not use Blob buffering", async () => {
-        const pageSource = await readFile(join(process.cwd(), "app", "pages", "index.vue"), "utf8");
+        // The browser-download logic lives in the useJobWorkflow composable (extracted from the
+        // page); assert against its source.
+        const workflowSource = await readFile(
+            join(process.cwd(), "app", "composables", "use-job-workflow.ts"),
+            "utf8"
+        );
 
-        expect(pageSource).not.toContain(".blob()");
-        expect(pageSource).not.toContain("createObjectURL");
-        expect(pageSource).not.toContain('tokenInput.name = "jobAccessToken"');
-        expect(pageSource).toContain("browserDownloadGrantResponseSchema.parse");
-        expect(pageSource).toContain("window.location.assign(parsed.downloadUrl)");
+        expect(workflowSource).not.toContain(".blob()");
+        expect(workflowSource).not.toContain("createObjectURL");
+        expect(workflowSource).not.toContain('tokenInput.name = "jobAccessToken"');
+        expect(workflowSource).toContain("browserDownloadGrantResponseSchema.parse");
+        expect(workflowSource).toContain("window.location.assign(parsed.downloadUrl)");
     });
 });

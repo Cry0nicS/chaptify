@@ -6,6 +6,7 @@ const PUBLIC_ERROR_MESSAGES: Record<PublicProcessingErrorCode, string> = {
     INVALID_AUDIO_FILE: "The uploaded file could not be read as a valid audio file.",
     NO_AUDIO_STREAM: "The uploaded file does not contain a supported audio stream.",
     NO_CHAPTERS_FOUND: "No embedded chapter metadata was found in this audiobook.",
+    AUDIOBOOK_TOO_SHORT: "This file is too short to split into timed parts.",
     INVALID_CHAPTER_METADATA: "The audiobook contains invalid chapter metadata.",
     PROCESSING_FAILED: "The audiobook could not be processed.",
     ZIP_CREATION_FAILED: "The chapter archive could not be created.",

@@ -10,10 +10,15 @@ import {
     hashBrowserJobAccessToken,
     verifySignedDownloadToken
 } from "../../server/utils/backend/ids";
-import {inspectAudioFile, splitChapters} from "../../server/utils/backend/media";
+import {
+    inspectAudioFile,
+    splitChapters,
+    synthesizeSegments
+} from "../../server/utils/backend/media";
 
 import {processJob} from "../../server/utils/backend/worker";
 import {
+    createChapterlessAudio,
     createSyntheticAudiobook,
     listZipEntries,
     makeConfig,
@@ -110,7 +115,8 @@ describe("synthetic ffmpeg end-to-end media", () => {
                 email: "reader@example.test",
                 sourcePath,
                 createdAt: new Date().toISOString(),
-                browserJobAccessTokenHash: hashBrowserJobAccessToken("browser-token")
+                browserJobAccessTokenHash: hashBrowserJobAccessToken("browser-token"),
+                splitWithoutChapters: false
             });
             const claimed = jobs.claimQueuedJob(new Date().toISOString());
 
@@ -216,5 +222,125 @@ describe("media input hardening", () => {
                 server.close(() => resolve());
             });
         }
+    });
+});
+
+describe("fixed-length segment synthesis", () => {
+    it("divides a duration into contiguous parts titled Part N", () => {
+        const segments = synthesizeSegments(5400, 1800);
+
+        expect(segments).toEqual([
+            {title: "Part 1", start: 0, end: 1800},
+            {title: "Part 2", start: 1800, end: 3600},
+            {title: "Part 3", start: 3600, end: 5400}
+        ]);
+    });
+
+    it("folds a tiny trailing part into the previous one", () => {
+        // 3600 + 10s tail: the 10s remainder must merge, not become its own Part.
+        const segments = synthesizeSegments(3610, 1800);
+
+        expect(segments).toEqual([
+            {title: "Part 1", start: 0, end: 1800},
+            {title: "Part 2", start: 1800, end: 3610}
+        ]);
+    });
+
+    it("keeps a substantial final part on its own", () => {
+        const segments = synthesizeSegments(4000, 1800);
+
+        expect(segments.map((segment) => segment.title)).toEqual(["Part 1", "Part 2", "Part 3"]);
+        expect(segments.at(-1)).toEqual({title: "Part 3", start: 3600, end: 4000});
+    });
+});
+
+describe("no-chapters fallback (ffprobe)", () => {
+    it("fails with NO_CHAPTERS_FOUND when the fallback is not enabled", async () => {
+        const root = await makeStorageRoot();
+        const sourcePath = await createChapterlessAudio(root, "mp3", 4);
+
+        await expect(inspectAudioFile(sourcePath, "mp3")).rejects.toMatchObject({
+            code: "NO_CHAPTERS_FOUND"
+        });
+    });
+
+    it("segments a long chapterless file when the fallback is enabled", async () => {
+        const root = await makeStorageRoot();
+        // 5s of audio, 2s segments, 4s minimum → three parts (last 1s folds into part 2).
+        const sourcePath = await createChapterlessAudio(root, "mp3", 5);
+
+        const inspection = await inspectAudioFile(sourcePath, "mp3", {
+            segmentWithoutChapters: true,
+            fallbackSegmentSeconds: 2,
+            minSegmentedDurationSeconds: 4
+        });
+
+        expect(inspection.segmented).toBe(true);
+        expect(inspection.chapters.length).toBeGreaterThanOrEqual(2);
+        expect(inspection.chapters[0]).toMatchObject({title: "Part 1", start: 0});
+        expect(inspection.chapters.at(-1)?.end).toBeCloseTo(inspection.duration, 1);
+    });
+
+    it("rejects a too-short file with AUDIOBOOK_TOO_SHORT even when the fallback is enabled", async () => {
+        const root = await makeStorageRoot();
+        const sourcePath = await createChapterlessAudio(root, "mp3", 3);
+
+        await expect(
+            inspectAudioFile(sourcePath, "mp3", {
+                segmentWithoutChapters: true,
+                fallbackSegmentSeconds: 2,
+                minSegmentedDurationSeconds: 3600
+            })
+        ).rejects.toMatchObject({code: "AUDIOBOOK_TOO_SHORT"});
+    });
+
+    it("end-to-end: a chapterless job with the flag produces segmented chapter files", async () => {
+        const root = await makeStorageRoot();
+        const database = openDatabase(root);
+        const jobs = createJobRepository(database);
+        const generated = await createChapterlessAudio(root, "mp3", 5);
+        const sourcePath = join(root, "jobs", "seg-job", "source", "source.mp3");
+        await mkdir(join(root, "jobs", "seg-job", "source"), {recursive: true});
+        await writeFile(sourcePath, await readFile(generated));
+
+        jobs.createJob({
+            publicJobId: "seg-public-id",
+            internalId: "seg-job",
+            displayFilename: "Long Lecture.mp3",
+            sourceFormat: "mp3",
+            outputFormat: "mp3",
+            fileSize: (await stat(sourcePath)).size,
+            email: "reader@example.test",
+            sourcePath,
+            createdAt: new Date().toISOString(),
+            browserJobAccessTokenHash: hashBrowserJobAccessToken("browser-token"),
+            splitWithoutChapters: true
+        });
+        const claimed = jobs.claimQueuedJob(new Date().toISOString());
+
+        if (!claimed) {
+            throw new Error("Expected queued job to be claimed");
+        }
+
+        await processJob(
+            {...makeConfig(root), fallbackSegmentSeconds: 2, minSegmentedDurationSeconds: 4},
+            jobs,
+            claimed
+        );
+
+        const ready = jobs.findByInternalId("seg-job");
+        expect(ready?.status).toBe("ready");
+        if (!ready?.zipPath) {
+            throw new Error("Expected ready ZIP");
+        }
+        const entries = await listZipEntries(ready.zipPath);
+        expect(entries.length).toBeGreaterThanOrEqual(2);
+        expect(entries[0]).toMatch(/^01 - Part 1\.mp3$/);
+
+        const history = jobs
+            .listUploadHistory()
+            .find((entry) => entry.publicJobId === "seg-public-id");
+        expect(history?.segmented).toBe(true);
+        expect(history?.chapterCount).toBe(entries.length);
     });
 });
