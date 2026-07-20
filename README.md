@@ -26,8 +26,9 @@ Then run the following commands
 ## Backend
 
 The backend accepts one MP3 or M4B upload plus an email address, stores a durable SQLite job, and
-uses a separate worker process to split embedded chapters with FFmpeg, create a ZIP, and send a
-temporary Mailgun download link.
+uses a separate worker process to run FFmpeg and send a temporary Mailgun download link. A job is
+one of two kinds: `split` (cut embedded chapters into a ZIP) or `convert` (transcode the whole file
+between MP3 and M4B). Both share the same job pipeline.
 
 Run the API locally with:
 
@@ -70,6 +71,12 @@ authoritative for upload size, supported media, queue capacity, chapter metadata
 availability. Files without embedded chapter markers fail with `NO_CHAPTERS_FOUND`; silence-based
 or AI chapter detection is not implemented.
 
+The `/convert` page ("Audio Converter") is a separate flow that converts one audiobook between MP3
+and M4B (`POST /api/convert`) instead of splitting it. It preserves chapters, cover art, and
+metadata, has no chapter requirement (so it also handles songs and clips), and returns a single
+file. Once a job is ready, either flow offers a "Delete now" action to purge the file and revoke
+its links immediately rather than waiting for the 12-hour expiry.
+
 Active job recovery uses `sessionStorage` and stores only the public job ID. Email addresses,
 filenames, internal errors, download tokens, and temporary URLs are not persisted in browser
 storage.
@@ -87,16 +94,19 @@ SQLite persistence, Mailgun delivery, storage cleanup, and the worker-only FFmpe
 The API process and worker process share `NUXT_STORAGE_ROOT` and the SQLite database under that
 root. The API never runs FFmpeg during an upload request: it streams the multipart file into
 temporary storage, moves it into a private per-job directory, creates a queued SQLite job, and
-returns a public job ID plus a browser job-access token. The worker claims queued jobs from SQLite,
-inspects embedded chapters with `ffprobe`, stream-copies chapter audio with FFmpeg, creates a ZIP,
-stores only token hashes, and then sends the Mailgun completion email.
+returns a public job ID plus a browser job-access token. The worker claims queued jobs from SQLite
+and branches on the job `kind`: a `split` job inspects embedded chapters with `ffprobe` and writes a
+ZIP of per-chapter files, while a `convert` job transcodes the whole file to the other format
+(preserving metadata, cover art, and chapters) into a single output file. It stores only token
+hashes, then sends the Mailgun completion email.
 
 There are three identifiers with different trust levels. The public job ID is safe to expose in
-status URLs. The browser job-access token lets the same browser session download a ready ZIP from
-`POST /api/jobs/:jobId/download`. The email download token is embedded only in the emailed
+status URLs. The browser job-access token lets the same browser session download a ready artifact
+(and delete it) from `POST /api/jobs/:jobId/download` and `POST /api/jobs/:jobId/delete`. The email
+download token is embedded only in the emailed
 `GET /api/download/:token` link. Raw tokens are never persisted; only SHA-256 hashes are stored.
 
-Ready ZIP files expire after the configured retention period. Cleanup runs in the worker on startup
+Ready artifacts expire after the configured retention period. Cleanup runs in the worker on startup
 and during the polling loop, removes expired or failed job files from the shared storage root, and
 marks expired jobs so old tokens stop resolving. Docker Compose runs one API service and one worker
 service from the same image, with both services mounting the same `chaptify-storage` volume.

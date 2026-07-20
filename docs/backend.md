@@ -4,9 +4,12 @@
 
 The backend is split between the Nuxt/Nitro API process and a separate worker process.
 The API accepts uploads, creates durable SQLite jobs, exposes public job status, streams ready
-downloads, and reports health. The worker polls SQLite for queued jobs, claims one atomically,
-runs `ffprobe` and `ffmpeg`, creates a ZIP archive, sends Mailgun completion email through a
-durable retry path, and runs cleanup.
+downloads, and reports health. Jobs come in two kinds, distinguished by a `kind` column on the
+`jobs` table: `split` cuts an audiobook into a per-chapter ZIP, and `convert` transcodes the whole
+file to the other format (mp3 ⇄ m4b). The worker polls SQLite for queued jobs, claims one
+atomically, runs `ffprobe`/`ffmpeg` for the job's kind, produces the output artifact (a ZIP for
+split, a single audio file for convert) stored at `output_path`, sends Mailgun completion email
+through a durable retry path, and runs cleanup.
 
 Runtime files live under `NUXT_STORAGE_ROOT`:
 
@@ -23,16 +26,25 @@ The storage root must be writable by both API and worker. It is never served sta
 
 ## API Endpoints
 
-- `POST /api/jobs` accepts multipart form fields `file`, `email`, an optional `outputFormat`
-  (`mp3` or `m4b`; defaults to the uploaded format), and an optional `splitWithoutChapters`
-  (`"true"`/`"false"`; default false). It streams one `.mp3` or `.m4b` upload to disk, validates
-  queue and size limits, creates a queued job, and returns `202`. When `splitWithoutChapters` is
-  true and the file has no embedded chapters, the worker splits it into fixed-length parts (see
-  below) instead of failing.
+- `POST /api/jobs` (the split flow) accepts multipart form fields `file`, `email`, an optional
+  `outputFormat` (`mp3` or `m4b`; defaults to the uploaded format), and an optional
+  `splitWithoutChapters` (`"true"`/`"false"`; default false). It streams one `.mp3` or `.m4b`
+  upload to disk, validates queue and size limits, creates a queued `split` job, and returns `202`.
+  When `splitWithoutChapters` is true and the file has no embedded chapters, the worker splits it
+  into fixed-length parts (see below) instead of failing.
+- `POST /api/convert` (the conversion flow) accepts multipart form fields `file`, `email`, and a
+  required target `outputFormat` (`mp3` or `m4b`, which must differ from the source). It reuses the
+  same slot/capacity/reservation/storage machinery as `POST /api/jobs`, creates a queued `convert`
+  job, and returns `202`. There is no chapter requirement, so any valid mp3/m4b is accepted.
 - `GET /api/jobs/:jobId` returns safe public status, progress, email status, and public errors.
-- `GET /api/download/:token` streams a ready ZIP while the signed email credential is valid.
+- `GET /api/download/:token` streams a ready job's artifact (a ZIP for split, a single audio file
+  for convert) while the signed email credential is valid.
 - `POST /api/jobs/:jobId/download` accepts the same-tab browser access credential in the request
-  body and streams the ready ZIP as an attachment.
+  body and streams the ready artifact as an attachment.
+- `POST /api/jobs/:jobId/delete` accepts the same-tab browser access credential and immediately
+  purges a ready job on request: it forces the job to `expired` (revoking both the emailed link and
+  any browser grants), removes the files, and releases the storage reservation — the same end state
+  as the retention-window expiry, on demand. Works for both job kinds.
 - `GET /api/health` verifies API runtime, SQLite access, and writable storage.
 - `POST /api/contact` validates a contact-form submission (name, email, topic, message) and
   forwards it via Mailgun to `NUXT_CONTACT_RECIPIENT` with the sender's address as Reply-To.
@@ -93,14 +105,28 @@ deterministic.
 After ZIP creation succeeds, the source file and intermediate chapter files are deleted. The ZIP
 remains available until the configured retention period expires.
 
+### Conversion (`convert` jobs)
+
+A `convert` job (created via `POST /api/convert`) transcodes the whole file to the other format
+instead of splitting it. It has no chapter requirement — any valid mp3/m4b is accepted, so it also
+works for songs and clips — but it still enforces the codec/container check and the
+`NUXT_MAX_AUDIOBOOK_DURATION_SECONDS` upper cap via a lightweight probe that fails fast on invalid
+input before any transcode. Because mp3 and m4b never share a codec, conversion always re-encodes
+(libmp3lame or aac at 128 kbps); there is no stream-copy path. Unlike the split output, conversion
+is a faithful repackage: the source's metadata tags, cover art, and embedded chapters are preserved
+(`-map_metadata 0 -map_chapters 0` plus the attached-picture stream). The output is a single file
+under `output/`; the source is deleted once the conversion succeeds, and the user-facing download
+filename is derived from the original upload name with the new extension.
+
 ## Cleanup
 
 Cleanup runs on worker startup, periodically in the worker loop, and can be run independently with
 `npm run cleanup:dev` or `npm run cleanup:start` after a production build. Expired ready jobs have
-their ZIP and remaining job directory removed, credentials invalidated, and status changed to
-`expired`. Failed jobs are anonymized and lose their retained files. Abandoned upload files and
-orphan job directories are removed best-effort. Cleanup is idempotent and refuses to remove paths
-outside `NUXT_STORAGE_ROOT`.
+their output artifact and remaining job directory removed, credentials invalidated, and status
+changed to `expired`. A user can trigger this same purge immediately via `POST /api/jobs/:jobId/delete`
+rather than waiting for expiry. Failed jobs are anonymized and lose their retained files. Abandoned
+upload files and orphan job directories are removed best-effort. Cleanup is idempotent and refuses
+to remove paths outside `NUXT_STORAGE_ROOT`.
 
 ## Local Startup
 

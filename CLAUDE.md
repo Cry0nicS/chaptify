@@ -34,12 +34,12 @@ Local development needs BOTH `npm run dev` and `npm run worker:dev` running — 
 
 ## Architecture (big picture)
 
-Chaptify accepts one MP3/M4B audiobook upload plus an email, splits its embedded chapters into per-chapter audio files, ZIPs them, and emails a temporary download link. Nuxt 4 + Nitro + Vue 3 + SQLite (`better-sqlite3`) + FFmpeg + Mailgun.
+Chaptify accepts one MP3/M4B audiobook upload plus an email and, depending on the flow, either splits its embedded chapters into per-chapter audio files and ZIPs them (`split` jobs, `POST /api/jobs`, the homepage) or converts the whole file to the other format — mp3 ⇄ m4b (`convert` jobs, `POST /api/convert`, the `/convert` page) — then emails a temporary download link. A `kind` column on the `jobs` table distinguishes the two; both share the same durable-job pipeline. Nuxt 4 + Nitro + Vue 3 + SQLite (`better-sqlite3`) + FFmpeg + Mailgun.
 
 Two processes share state; there is no in-memory job queue:
 
 - **API process** (`server/api/`) — streams the upload to disk, creates a durable **queued** SQLite job, returns a public job ID + browser access token. It never runs FFmpeg during a request.
-- **Worker process** (`server/worker.ts`, `server/utils/backend/worker.ts`) — atomically claims queued jobs from SQLite, runs `ffprobe`/`ffmpeg`, builds the ZIP, stores token hashes, sends the Mailgun email, and runs cleanup on startup + on a loop.
+- **Worker process** (`server/worker.ts`, `server/utils/backend/worker.ts`) — atomically claims queued jobs from SQLite and branches on `kind`: `split` runs `ffprobe`/`ffmpeg` and builds the ZIP; `convert` transcodes the whole file to a single output (preserving metadata/cover/chapters). It stores token hashes at `output_path`, sends the Mailgun email, and runs cleanup on startup + on a loop.
 
 Both share `NUXT_STORAGE_ROOT`, which holds `database/chaptify.sqlite` and `jobs/<id>/{source,chapters,output}`. SQLite is the coordination layer (job state, storage reservations, retry state, rate-limit durability). The storage root is never served statically.
 
@@ -62,8 +62,9 @@ Raw tokens are never persisted — only SHA-256 hashes. Status responses never l
 ### Key behaviors to preserve
 
 - Processing states: `queued` → `processing` → `ready` / `failed` / `expired`. Email states (`pending`/`sent`/`failed`) are independent — a Mailgun failure must never flip a `ready` job to `failed`. Completion email is at-least-once (duplicates are safe).
-- Embedded chapters are required; files without them fail with `NO_CHAPTERS_FOUND`. Silence/AI detection is intentionally out of scope.
-- ZIPs expire after `NUXT_JOB_RETENTION_HOURS` (default 12h). Cleanup is idempotent and refuses to touch paths outside `NUXT_STORAGE_ROOT`.
+- Embedded chapters are required **for `split` jobs**; files without them fail with `NO_CHAPTERS_FOUND` (unless `splitWithoutChapters` opts into fixed-length segments). `convert` jobs have no chapter requirement. Silence/AI detection is intentionally out of scope.
+- `convert` jobs always re-encode (mp3/m4b never share a codec) and are a faithful repackage: metadata, cover art, and embedded chapters are preserved, not stripped.
+- Output artifacts (`output_path`) expire after `NUXT_JOB_RETENTION_HOURS` (default 12h); a user can also purge on demand via `POST /api/jobs/:jobId/delete`. Cleanup is idempotent and refuses to touch paths outside `NUXT_STORAGE_ROOT`.
 - FFmpeg/ffprobe: invoke with argument arrays via the wrapper in `server/utils/backend/process.ts`; never `shell: true`, never interpolate user input, never trust uploaded filenames/MIME.
 - Designed for a single API + single worker on one VPS; per-IP counters and upload slots are in-memory (reset on restart), while capacity/reservations/state are durable in SQLite.
 
