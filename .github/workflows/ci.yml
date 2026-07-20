@@ -97,6 +97,12 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+      # The smoke script shells out to ffmpeg on the host to generate the synthetic audiobook it
+      # feeds into the container, so ffmpeg must be present even though npm ci is not needed.
+      - name: Install media tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
       - name: Create empty env file for compose validation
         run: |
           touch .env
