@@ -18,10 +18,17 @@ const {navigationItems} = useNavItems();
                     class="hidden md:flex"
                     :highlight="true"
                     :items="navigationItems" />
+                <ULink
+                    to="/privacy"
+                    class="text-muted hover:text-highlighted text-sm">
+                    Privacy
+                </ULink>
             </template>
             <template #social>
                 <NavThemeToggle />
             </template>
         </NavFooter>
+
+        <PrivacyNotice />
     </div>
 </template>
