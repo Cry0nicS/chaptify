@@ -180,7 +180,7 @@ npm run smoke:docker
 
 Required production values:
 
-- `NUXT_SITE_URL`: externally accessible origin used in email links (e.g. `https://chaptify.org`).
+- `NUXT_SITE_URL`: externally accessible origin used in email links (e.g. `https://chaptify.app`).
 - `NUXT_STORAGE_ROOT`: writable shared API/worker storage root.
 - `NUXT_MAILGUN_BASE_URL`
 - `NUXT_MAILGUN_DOMAIN`
@@ -223,6 +223,12 @@ Operational defaults:
 `NUXT_CONTACT_RECIPIENT` is the operator inbox that receives contact-form submissions. When it is
 unset, `POST /api/contact` fails with a generic delivery error and the rest of the app is
 unaffected.
+
+`NUXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN` is optional and frontend-only: when set, the app embeds the
+Cloudflare Web Analytics (RUM) beacon with this token (`app/app.vue`). The token is public by
+design — it ends up in the served HTML. Leave blank to disable analytics (CI, smoke tests). Dev
+mode (`npm run dev`) never loads the beacon even when the token is set, because Cloudflare's RUM
+endpoint only accepts the site's registered production hostname.
 
 `NUXT_SITE_URL` is deliberately distinct from Nuxt's reserved `NUXT_APP_BASE_URL` (the route path
 prefix, `app.baseURL`). The reserved variable should stay unset unless the app is served under a

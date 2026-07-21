@@ -73,7 +73,7 @@ container.
 `.env.example` gains `DOMAIN` (blank locally) and a commented `COMPOSE_FILE`. On the VPS, set both:
 
 ```dotenv
-DOMAIN=chaptify.org
+DOMAIN=chaptify.app
 COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
 ```
 
@@ -105,7 +105,7 @@ but inert until scheduled via cron on the VPS (Phase 7).
 
 Collect before you start:
 
-- A registered domain (any registrar). This runbook uses `chaptify.org`, app on the apex, marketing optionally on `www`.
+- A registered domain (any registrar). This runbook uses `chaptify.app`, app on the apex, marketing optionally on `www`.
 - A Cloudflare account (free plan is sufficient).
 - A Mailgun account, EU region.
 - An SSH keypair. Generate one if needed: `ssh-keygen -t ed25519 -C "chaptify-deploy"`.
@@ -125,7 +125,7 @@ Keep it secret and stable — rotating it invalidates all outstanding emailed do
 
 You are delegating DNS to Cloudflare (a nameserver change at the registrar). The flow is registrar-agnostic ([Cloudflare full-setup docs](https://developers.cloudflare.com/dns/zone-setups/full-setup/setup/)):
 
-1. In the Cloudflare dashboard, **Add a domain** → enter the apex (`chaptify.org`) → choose the **Free** plan.
+1. In the Cloudflare dashboard, **Add a domain** → enter the apex (`chaptify.app`) → choose the **Free** plan.
 2. Cloudflare scans and imports existing DNS records. Review them; you will finalize the record set in Phase 5.
 3. Cloudflare assigns **two nameservers** (e.g. `xxx.ns.cloudflare.com`). Copy them.
 4. At your **registrar**, **disable DNSSEC** if currently enabled, then replace the domain's nameservers with the two Cloudflare nameservers.
@@ -247,16 +247,16 @@ NODE_ENV=production
 
 # Public HTTPS origin used in completion-email download links.
 # MUST be the https domain. Do NOT set NUXT_APP_BASE_URL (Nuxt's reserved route-prefix var).
-NUXT_SITE_URL=https://chaptify.org
+NUXT_SITE_URL=https://chaptify.app
 
 # Storage root INSIDE the container (Compose sets this to /data/chaptify already).
 NUXT_STORAGE_ROOT=/data/chaptify
 
 # Mailgun (EU region — note the EU base URL).
 NUXT_MAILGUN_BASE_URL=https://api.eu.mailgun.net
-NUXT_MAILGUN_DOMAIN=mg.chaptify.org
+NUXT_MAILGUN_DOMAIN=mg.chaptify.app
 NUXT_MAILGUN_KEY=<your-mailgun-sending-api-key>
-NUXT_MAILGUN_SENDER=Chaptify <noreply@mg.chaptify.org>
+NUXT_MAILGUN_SENDER=Chaptify <noreply@mg.chaptify.app>
 
 # 32+ random chars from `openssl rand -hex 32` (Phase 0). Keep stable.
 NUXT_DOWNLOAD_SIGNING_SECRET=<generated-secret>
@@ -266,11 +266,14 @@ NUXT_TRUST_PROXY=true
 
 # Production Docker overlay (Phase R): the public host Caddy serves + requests a cert for, and the
 # shortcut that makes every `docker compose` command on the VPS include the prod overlay.
-DOMAIN=chaptify.org
+DOMAIN=chaptify.app
 COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
 
 # Optional: contact-form inbox. Leave unset to disable /api/contact.
-NUXT_CONTACT_RECIPIENT=you@chaptify.org
+NUXT_CONTACT_RECIPIENT=you@chaptify.app
+
+# Optional: Cloudflare Web Analytics beacon token (see Phase 5.1). Public by design.
+NUXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN=<web-analytics-token>
 ```
 
 `NUXT_MAX_UPLOAD_BYTES` stays at its 1.6 GB default. The remaining operational defaults in `.env.example` are fine for a single VPS.
@@ -374,9 +377,9 @@ Create the records below in the Cloudflare zone. **Proxy status is the critical 
 
 | Name | Type | Value | Proxy | Purpose |
 |------|------|-------|-------|---------|
-| `chaptify.org` (apex) | `A` | `<VPS IPv4>` | **DNS only (grey)** | App — must bypass Cloudflare body limit |
-| `chaptify.org` (apex) | `AAAA` | `<VPS IPv6>` | **DNS only (grey)** | App over IPv6 (omit if no IPv6) |
-| `www` | `A` / `CNAME` | `<VPS IPv4>` or `chaptify.org` | grey if it serves the app; orange only if it is a separate static marketing page | See note |
+| `chaptify.app` (apex) | `A` | `<VPS IPv4>` | **DNS only (grey)** | App — must bypass Cloudflare body limit |
+| `chaptify.app` (apex) | `AAAA` | `<VPS IPv6>` | **DNS only (grey)** | App over IPv6 (omit if no IPv6) |
+| `www` | `A` / `CNAME` | `<VPS IPv4>` or `chaptify.app` | grey if it serves the app; orange only if it is a separate static marketing page | See note |
 | SSL/TLS mode | — | **Full (strict)** *if any record is proxied*; irrelevant for grey-cloud (Caddy's LE cert is served directly) | — | Encryption mode |
 
 Notes:
@@ -385,24 +388,38 @@ Notes:
 - **SSL/TLS mode** ([Cloudflare SSL modes](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/)): for a **grey-cloud** record the browser talks directly to Caddy's Let's Encrypt certificate — the zone SSL/TLS mode does not apply to that hostname. For any **orange-cloud** hostname you keep, use **Full (strict)** (edge↔origin HTTPS with certificate validation against a public CA like Let's Encrypt, or a [Cloudflare Origin CA](https://developers.cloudflare.com/ssl/origin-configuration/origin-ca/) cert). Never use **Flexible** (edge→origin is plain HTTP) or **Full** (no cert validation) for a production origin — Cloudflare recommends Full or Full (strict) ([Cloudflare SSL modes](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/)).
 - **Always Use HTTPS**: for any proxied hostname, enable it in SSL/TLS → Edge Certificates ([Cloudflare Always Use HTTPS](https://developers.cloudflare.com/ssl/edge-certificates/additional-options/always-use-https/)). For grey-cloud, Caddy already redirects HTTP→HTTPS at the origin.
 
-Once the app A/AAAA records resolve to the VPS, reload Caddy (or just wait) and it will complete ACME issuance. Confirm: `curl -I https://chaptify.org` returns a valid TLS response.
+Once the app A/AAAA records resolve to the VPS, reload Caddy (or just wait) and it will complete ACME issuance. Confirm: `curl -I https://chaptify.app` returns a valid TLS response.
+
+### 5.1 Cloudflare Web Analytics (RUM)
+
+Cloudflare Web Analytics is free, cookieless RUM — no cookies, no browser storage, no fingerprinting, and no cross-site tracking ([Cloudflare Web Analytics](https://developers.cloudflare.com/web-analytics/)) — so it fits the site's consent-exempt privacy model (documented on `/privacy`; no consent banner required).
+
+Because the app hostname is **DNS-only (grey cloud)**, Cloudflare cannot auto-inject the beacon at the edge — the site must be added with the **manual JS snippet**, which the app already embeds when a token is configured:
+
+1. Cloudflare dashboard → **Analytics & Logs → Web Analytics → Add a site**.
+2. Enter the app hostname and choose the **manual setup / JS snippet** option (not automatic injection).
+3. From the offered snippet, copy only the **token** (the value inside `data-cf-beacon='{"token": "..."}'`) — do not paste the snippet anywhere.
+4. Set `NUXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN=<token>` in `.env` and restart: `docker compose up -d`.
+5. Verify: the served HTML contains `static.cloudflareinsights.com/beacon.min.js`, and page views appear in the Web Analytics dashboard within a few minutes.
+
+The token is public by design (it is embedded in every page); leaving the variable blank disables analytics entirely (dev, CI, smoke tests).
 
 ---
 
 ## Phase 6 — Mailgun sender-domain verification
 
-Chaptify sends completion emails via Mailgun. You must verify the sending domain (`NUXT_MAILGUN_DOMAIN`, e.g. `mg.chaptify.org`) by adding DNS records. The app is configured for the **EU region** (`NUXT_MAILGUN_BASE_URL=https://api.eu.mailgun.net`); region affects only the API base URL, not the DNS record set ([Mailgun DNS FAQ](https://help.mailgun.com/hc/en-us/articles/360011565514-DNS-frequently-asked-questions)).
+Chaptify sends completion emails via Mailgun. You must verify the sending domain (`NUXT_MAILGUN_DOMAIN`, e.g. `mg.chaptify.app`) by adding DNS records. The app is configured for the **EU region** (`NUXT_MAILGUN_BASE_URL=https://api.eu.mailgun.net`); region affects only the API base URL, not the DNS record set ([Mailgun DNS FAQ](https://help.mailgun.com/hc/en-us/articles/360011565514-DNS-frequently-asked-questions)).
 
-1. In the Mailgun dashboard (**EU region**), add the sending domain `mg.chaptify.org` and open its **Domain Verification & DNS** page.
+1. In the Mailgun dashboard (**EU region**), add the sending domain `mg.chaptify.app` and open its **Domain Verification & DNS** page.
 2. Add the records Mailgun shows. The set is ([Mailgun domain verification](https://documentation.mailgun.com/docs/mailgun/user-manual/domains/domains-verify), [Mailgun setup guide](https://help.mailgun.com/hc/en-us/articles/32884700912923-Domain-Verification-Setup-Guide)):
 
 | Name | Type | Value | Required | Purpose |
 |------|------|-------|----------|---------|
-| `mg.chaptify.org` | `TXT` | `v=spf1 include:mailgun.org ~all` | Yes | SPF (sender authorization) |
-| `<key>._domainkey.mg.chaptify.org` | `TXT` | *(long public key from the Mailgun dashboard — per-domain)* | Yes | DKIM (signature) |
-| `mg.chaptify.org` | `MX` | `mxa.mailgun.org` (priority 10) | Yes* | Receiving |
-| `mg.chaptify.org` | `MX` | `mxb.mailgun.org` (priority 10) | Yes* | Receiving |
-| `email.mg.chaptify.org` | `CNAME` | `mailgun.org` | Optional | Open/click tracking |
+| `mg.chaptify.app` | `TXT` | `v=spf1 include:mailgun.org ~all` | Yes | SPF (sender authorization) |
+| `<key>._domainkey.mg.chaptify.app` | `TXT` | *(long public key from the Mailgun dashboard — per-domain)* | Yes | DKIM (signature) |
+| `mg.chaptify.app` | `MX` | `mxa.mailgun.org` (priority 10) | Yes* | Receiving |
+| `mg.chaptify.app` | `MX` | `mxb.mailgun.org` (priority 10) | Yes* | Receiving |
+| `email.mg.chaptify.app` | `CNAME` | `mailgun.org` | Optional | Open/click tracking |
 
    \* The two MX records are part of Mailgun's standard verified set; they are only strictly needed if you also receive mail on the domain, but Mailgun lists them for full verification. The **tracking CNAME is optional** — add it only if you want open/click analytics.
 
@@ -410,7 +427,7 @@ Chaptify sends completion emails via Mailgun. You must verify the sending domain
 
 3. Add these in **Cloudflare DNS**, all **DNS only (grey cloud)** — mail-authentication records must not be proxied ([Cloudflare proxy status](https://developers.cloudflare.com/dns/proxy-status/) recommends DNS-only for email records).
 4. Back in Mailgun, click **Verify** (DNS propagation can take up to 24–48 h). A verified domain lifts the sandbox sending cap.
-5. Set the matching values in `.env`: `NUXT_MAILGUN_DOMAIN=mg.chaptify.org`, `NUXT_MAILGUN_SENDER=Chaptify <noreply@mg.chaptify.org>`, `NUXT_MAILGUN_KEY=<sending key>`, then `docker compose up -d` to restart with the new config.
+5. Set the matching values in `.env`: `NUXT_MAILGUN_DOMAIN=mg.chaptify.app`, `NUXT_MAILGUN_SENDER=Chaptify <noreply@mg.chaptify.app>`, `NUXT_MAILGUN_KEY=<sending key>`, then `docker compose up -d` to restart with the new config.
 
 ---
 
@@ -452,17 +469,18 @@ crontab -e   # add:
 
 ## Phase 8 — Go-live verification
 
-1. **DNS / TLS**: `dig +short chaptify.org` returns the VPS IP; `curl -I https://chaptify.org` returns a valid cert and `200`. Optionally check the TLS grade at the [SSL Labs test](https://www.ssllabs.com/ssltest/).
-2. **Health**: `curl -fsS https://chaptify.org/api/health` returns OK (verifies API runtime, SQLite access, writable storage).
+1. **DNS / TLS**: `dig +short chaptify.app` returns the VPS IP; `curl -I https://chaptify.app` returns a valid cert and `200`. Optionally check the TLS grade at the [SSL Labs test](https://www.ssllabs.com/ssltest/).
+2. **Health**: `curl -fsS https://chaptify.app/api/health` returns OK (verifies API runtime, SQLite access, writable storage).
 3. **End-to-end**: from a browser, upload a real MP3/M4B with embedded chapters, submit an email, and confirm:
    - the job reaches `ready` (poll `GET /api/jobs/:jobId`);
    - the **worker** logs the FFmpeg run (`docker compose logs worker`);
-   - the **completion email** arrives (check Mailgun logs if not) and its link points at `https://chaptify.org/...` (proves `NUXT_SITE_URL`);
+   - the **completion email** arrives (check Mailgun logs if not) and its link points at `https://chaptify.app/...` (proves `NUXT_SITE_URL`);
    - the emailed download link streams the ZIP (split) / converted file (convert).
    - Test a **large upload near 1.6 GB** to confirm it is not rejected — proves the grey-cloud path bypasses Cloudflare's body limit.
 4. **Client-IP correctness**: make a few requests and confirm the app's per-IP rate limiting keys on your real client IP, not the proxy. A quick check: from two different source IPs, verify the per-IP upload limit (`NUXT_PER_IP_UPLOAD_LIMIT=5`) is counted independently. If **all** external clients collapse to one counter, the failure is Docker not preserving the source IP through the published port (Phase 4 note), not `NUXT_TRUST_PROXY`; if a single client's forged `X-Forwarded-For` changed its identity, that would be a trust-config problem (see Phase 3.2) — but Caddy already discards client-supplied `X-Forwarded-For`, so it should not.
-5. **Port exposure**: from an external host, confirm `:3000` is closed (`nc -vz chaptify.org 3000` should fail) and only 22/80/443 are open.
+5. **Port exposure**: from an external host, confirm `:3000` is closed (`nc -vz chaptify.app 3000` should fail) and only 22/80/443 are open.
 6. **Cleanup/expiry**: confirm a ready job expires after `NUXT_JOB_RETENTION_HOURS` (default 12 h) and that `POST /api/jobs/:jobId/delete` purges on demand.
+7. **Web Analytics** (if enabled in Phase 5.1): the served HTML references `static.cloudflareinsights.com/beacon.min.js` and page views show up in the Cloudflare Web Analytics dashboard.
 
 ---
 
@@ -470,7 +488,7 @@ crontab -e   # add:
 
 - **Server size vs budget**: `CX33` (€8.49/mo, recommended) vs the cheaper `CX23` (€5.49/mo, 40 GB — requires lowering `NUXT_MAX_QUEUED_JOBS`) vs `CX43`/`CAX21` for more headroom. Confirm current prices and any IPv4 surcharge in the Hetzner Console.
 - **Grey-cloud the app hostname**: strongly recommended (only way 1.6 GB uploads work on non-Enterprise Cloudflare). Decide whether to keep a *separate* orange-cloud marketing hostname for CDN/WAF on static pages.
-- **Mailgun tracking CNAME**: optional open/click analytics — add `email.mg.chaptify.org → mailgun.org` only if you want it.
+- **Mailgun tracking CNAME**: optional open/click analytics — add `email.mg.chaptify.app → mailgun.org` only if you want it.
 - **Backup destination**: choose an off-box target (S3/R2/Backblaze/another host) and wire it into `backup.sh`; decide the retention window (script defaults to 14 days locally).
 - **`NUXT_CONTACT_RECIPIENT`**: set it to enable the contact form, or leave unset to disable `POST /api/contact`.
 - **IPv6**: create the `AAAA` record only if you want the app reachable over IPv6.
