@@ -9,6 +9,10 @@ const PAGES = [
     {path: "/contact", changefreq: "monthly", priority: "0.5"}
 ];
 
+// Resolved once when the module loads (i.e. at server start / deploy), not per request, so the
+// value is stable between crawls and refreshes when a new build ships content changes. W3C date.
+const LAST_MODIFIED = new Date().toISOString().slice(0, 10);
+
 export default defineEventHandler((event) => {
     const config = useRuntimeConfig(event);
     const origin = normalizeOrigin(config.siteUrl);
@@ -16,6 +20,7 @@ export default defineEventHandler((event) => {
     const urls = PAGES.map(
         (page) =>
             `    <url><loc>${origin}${page.path}</loc>` +
+            `<lastmod>${LAST_MODIFIED}</lastmod>` +
             `<changefreq>${page.changefreq}</changefreq>` +
             `<priority>${page.priority}</priority></url>`
     ).join("\n");
