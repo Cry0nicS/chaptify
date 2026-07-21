@@ -5,10 +5,10 @@ definePageMeta({
     layout: "default"
 });
 
-useSeoMeta({
-    title: "MP3 to M4B Converter — and M4B to MP3",
+useSeo({
+    title: "MP3 to M4B converter — and M4B to MP3",
     description:
-        "Free online converter for audiobooks between MP3 and M4B. Keeps chapters, cover art, and metadata. Upload one file and get the converted download by email."
+        "Free online audiobook converter between MP3 and M4B. Keeps chapters, cover art, and metadata. Upload one file and get the converted download by email."
 });
 
 const {
