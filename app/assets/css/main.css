@@ -1,39 +1,120 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
+/*
+ * Chaptify theme — "Night & Paper".
+ *
+ * Dark is the default: a deep violet-ink night sky for listening after dark. Light is a warm,
+ * low-glare book page — never pure white. The brand's blue→violet logo gradient becomes a real
+ * accent: `iris` (blue-violet) is the primary, `azure` (blue) the secondary, and the two mix into
+ * the hero waveform. `dusk` is a violet-cast neutral so greys read as dusk, not concrete.
+ *
+ * Ramps are declared with `@theme static` because Nuxt UI consumes them indirectly through its
+ * --ui-color-* aliases, so Tailwind's usage detection must not tree-shake them. Surface/text/border
+ * tokens are then overridden explicitly per mode (rather than derived from one neutral ramp) so the
+ * warm paper and the cool ink can each be tuned on their own. Every text/surface pair clears WCAG AA.
+ */
 @theme static {
     --font-sans: "Figtree", sans-serif;
     --font-display: "Bricolage Grotesque", sans-serif;
     --font-mono: "JetBrains Mono", monospace;
 
-    /* "Iris" — primary ramp derived from the logo gradient (#168BFF → #7C3AED). */
-    --color-iris-50: #f0f2fe;
-    --color-iris-100: #e2e6fd;
-    --color-iris-200: #cad0fb;
-    --color-iris-300: #a8aef8;
-    --color-iris-400: #8688f2;
-    --color-iris-500: #6f66ea;
-    --color-iris-600: #5e48dd;
-    --color-iris-700: #5039c2;
-    --color-iris-800: #42309d;
-    --color-iris-900: #392e7d;
-    --color-iris-950: #221a49;
+    /* "Iris" — primary. The blue-violet core of the logo gradient. */
+    --color-iris-50: #f1f0fe;
+    --color-iris-100: #e6e3fd;
+    --color-iris-200: #d0cbfb;
+    --color-iris-300: #b2a8f8;
+    --color-iris-400: #9f86f5;
+    --color-iris-500: #6d5cf0;
+    --color-iris-600: #5b47e0;
+    --color-iris-700: #4c39c4;
+    --color-iris-800: #3f309e;
+    --color-iris-900: #372c7c;
+    --color-iris-950: #221a4e;
 
-    /* "Dusk" — violet-cast neutral so dark mode reads as night sky, not gray. */
-    --color-dusk-50: #f8f8fb;
-    --color-dusk-100: #f1f0f6;
-    --color-dusk-200: #e2e1ec;
-    --color-dusk-300: #cbc9db;
-    --color-dusk-400: #a5a2bd;
-    --color-dusk-500: #86829f;
-    --color-dusk-600: #6b6786;
-    --color-dusk-700: #57536d;
-    --color-dusk-800: #403d52;
-    --color-dusk-900: #2b2939;
-    --color-dusk-950: #17151f;
+    /* "Azure" — secondary. The blue end of the logo gradient; pairs with iris for accents. */
+    --color-azure-50: #ecf5ff;
+    --color-azure-100: #d5e9ff;
+    --color-azure-200: #b4d8ff;
+    --color-azure-300: #82c0ff;
+    --color-azure-400: #48a2ff;
+    --color-azure-500: #1f86ff;
+    --color-azure-600: #0a6ae6;
+    --color-azure-700: #0d57bd;
+    --color-azure-800: #114a99;
+    --color-azure-900: #143f7c;
+    --color-azure-950: #0e274c;
+
+    /* "Dusk" — violet-cast neutral for neutral-coloured controls. */
+    --color-dusk-50: #f7f7fa;
+    --color-dusk-100: #eeedf3;
+    --color-dusk-200: #dcdae6;
+    --color-dusk-300: #bfbccf;
+    --color-dusk-400: #9a96b0;
+    --color-dusk-500: #78748f;
+    --color-dusk-600: #5f5b73;
+    --color-dusk-700: #4b475c;
+    --color-dusk-800: #343143;
+    --color-dusk-900: #221f2e;
+    --color-dusk-950: #16141f;
 }
 
+/*
+ * Light — "Paper". Warm, low-glare book-page surfaces with a violet-ink accent. Overrides Nuxt UI's
+ * default white background and slate-derived text so nothing is pure white and the greys stay warm.
+ */
+:root {
+    --ui-primary: var(--color-iris-600);
+    --ui-secondary: var(--color-azure-600);
+
+    --ui-bg: #f7f4ec;
+    --ui-bg-muted: #efe9dc;
+    --ui-bg-elevated: #fdfbf4;
+    --ui-bg-accented: #e7e0cf;
+    --ui-bg-inverted: #16141f;
+
+    --ui-text-dimmed: #837c8f;
+    --ui-text-muted: #6a6478;
+    --ui-text-toned: #514b60;
+    --ui-text: #3a3547;
+    --ui-text-highlighted: #24202b;
+    --ui-text-inverted: #f7f4ec;
+
+    --ui-border: #e6dfd0;
+    --ui-border-muted: #efe9dc;
+    --ui-border-accented: #d8d0bf;
+    --ui-border-inverted: #16141f;
+}
+
+/*
+ * Dark (default) — "Night". A deep violet-ink sky; the primary listening mode. Alias colours lift to
+ * the 400 shade for contrast on the dark ground.
+ */
+.dark {
+    --ui-primary: var(--color-iris-400);
+    --ui-secondary: var(--color-azure-400);
+
+    --ui-bg: #131120;
+    --ui-bg-muted: #1a1826;
+    --ui-bg-elevated: #201d2e;
+    --ui-bg-accented: #2a2740;
+    --ui-bg-inverted: #f7f4ec;
+
+    --ui-text-dimmed: #6d6886;
+    --ui-text-muted: #948fac;
+    --ui-text-toned: #b3aecb;
+    --ui-text: #d7d3e6;
+    --ui-text-highlighted: #f5f3fb;
+    --ui-text-inverted: #131120;
+
+    --ui-border: #2a2740;
+    --ui-border-muted: #201d2e;
+    --ui-border-accented: #383350;
+    --ui-border-inverted: #f7f4ec;
+}
+
+/* Text selection carries the brand violet in both modes. */
 ::selection {
     background-color: var(--color-iris-500);
-    color: var(--color-iris-50);
+    color: #ffffff;
 }

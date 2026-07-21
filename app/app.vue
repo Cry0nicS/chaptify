@@ -12,7 +12,8 @@ useHead({
     },
     titleTemplate: (title?: string | null) => (title ? `${title} · ${SITE_NAME}` : SITE_NAME),
     meta: [
-        {name: "theme-color", content: "#7c3aed"},
+        {name: "theme-color", content: "#f7f4ec", media: "(prefers-color-scheme: light)"},
+        {name: "theme-color", content: "#131120", media: "(prefers-color-scheme: dark)"},
         {name: "robots", content: "index, follow"},
         {name: "format-detection", content: "telephone=no"},
         {property: "og:site_name", content: SITE_NAME},
