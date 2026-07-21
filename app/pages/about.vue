@@ -3,8 +3,8 @@ definePageMeta({
     layout: "default"
 });
 
-useSeoMeta({
-    title: "Chaptify | About",
+useSeo({
+    title: "About",
     description:
         "Why Chaptify exists: audiobooks split into chapter files so watches and small players can finally play them."
 });

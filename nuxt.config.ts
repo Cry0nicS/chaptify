@@ -25,6 +25,26 @@ export default defineNuxtConfig({
 
     css: ["~/assets/css/main.css"],
 
+    app: {
+        head: {
+            htmlAttrs: {
+                lang: "en"
+            },
+            // Pages set a bare title; this appends the brand. Keep in sync with the JSON-LD name.
+            titleTemplate: "%s · Chaptify",
+            title: "Split & convert audiobooks",
+            meta: [
+                {name: "theme-color", content: "#7c3aed"},
+                {name: "robots", content: "index, follow"},
+                {name: "format-detection", content: "telephone=no"},
+                {property: "og:site_name", content: "Chaptify"},
+                {property: "og:type", content: "website"},
+                {property: "og:locale", content: "en_US"},
+                {name: "twitter:card", content: "summary"}
+            ]
+        }
+    },
+
     runtimeConfig: {
         // Public absolute origin used in emailed download links (NUXT_SITE_URL). Distinct from
         // Nuxt's reserved NUXT_APP_BASE_URL, which is a route path prefix and stays untouched.

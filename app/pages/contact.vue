@@ -8,8 +8,8 @@ definePageMeta({
     layout: "default"
 });
 
-useSeoMeta({
-    title: "Chaptify | Contact",
+useSeo({
+    title: "Contact",
     description:
         "Suggest a feature, report a bug, or say hello — messages go straight to the developer's inbox."
 });

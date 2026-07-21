@@ -5,10 +5,10 @@ definePageMeta({
     layout: "default"
 });
 
-useSeoMeta({
-    title: "Chaptify | Split audiobooks into chapters",
+useSeo({
+    title: "Split audiobooks into chapters",
     description:
-        "Upload an M4B or MP3 audiobook with embedded chapter metadata and receive chapter files by email."
+        "Split an M4B or MP3 audiobook into per-chapter files by its embedded chapters and get them by email. Free, no signup — download links expire in 12 hours."
 });
 
 const {
