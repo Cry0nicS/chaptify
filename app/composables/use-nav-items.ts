@@ -3,9 +3,9 @@ import type {NavigationMenuItem} from "@nuxt/ui";
 export const useNavItems = () => {
     const navigationItems = computed<NavigationMenuItem[]>(() => [
         {
-            label: "Home",
+            label: "Split Audiobook",
             to: "/",
-            icon: "i-lucide-house"
+            icon: "i-lucide-scissors"
         },
         {
             label: "Audio Converter",
