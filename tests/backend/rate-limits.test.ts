@@ -72,6 +72,17 @@ describe("client IP resolution and rate limiting", () => {
         expect(getClientIp(event, "true")).toBe("203.0.113.50");
     });
 
+    it("in single-proxy (true) mode takes the right-most hop, ignoring injected left-most entries", () => {
+        // Defense in depth: our Caddy overwrites X-Forwarded-For with a single sanitized hop in
+        // production, but if any multi-hop value reaches the app, `true` must key on the right-most
+        // (proxy-attested) client and never an injected left-most entry.
+        const event = makeIpEvent("10.9.9.9", {
+            "x-forwarded-for": "1.2.3.4, 9.9.9.9, 203.0.113.50"
+        });
+
+        expect(getClientIp(event, "true")).toBe("203.0.113.50");
+    });
+
     it("matches IPv6 CIDR and exact trust entries across textual forms", () => {
         const cidrPeer = makeIpEvent("2001:db8:0:0:0:0:0:1", {"x-forwarded-for": "203.0.113.60"});
         expect(getClientIp(cidrPeer, "2001:db8::/32")).toBe("203.0.113.60");

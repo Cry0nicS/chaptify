@@ -13,7 +13,9 @@
     # Do NOT add `request_body { max_size ... }` here — it would reject large uploads (413) at the
     # proxy before they reach the app.
     #
-    # reverse_proxy sets X-Forwarded-For with the real client as the right-most hop, which the app
-    # reads when NUXT_TRUST_PROXY=true. Caddy reaches the app over the internal compose network.
+    # By default Caddy overwrites X-Forwarded-For with the real connecting client's IP (a
+    # client-supplied value is NOT trusted and is dropped), so the app — with NUXT_TRUST_PROXY=true,
+    # which reads the right-most hop — always keys per-IP limits on the real client. Caddy reaches
+    # the app over the internal compose network.
     reverse_proxy chaptify:3000
 }
