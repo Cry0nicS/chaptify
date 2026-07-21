@@ -1,5 +1,13 @@
 <script setup lang="ts">
+import type {NavigationMenuItem} from "@nuxt/ui";
+
 const {navigationItems} = useNavItems();
+
+// Footer-only legal link. Rendered through UNavigationMenu (not in the shared nav items, so it
+// stays out of the header) so it matches the other footer links' styling and carries an icon.
+const footerItems: NavigationMenuItem[] = [
+    {label: "Privacy", to: "/privacy", icon: "i-lucide-shield-user"}
+];
 </script>
 
 <template>
@@ -18,11 +26,9 @@ const {navigationItems} = useNavItems();
                     class="hidden md:flex"
                     :highlight="true"
                     :items="navigationItems" />
-                <ULink
-                    to="/privacy"
-                    class="text-muted hover:text-highlighted text-sm">
-                    Privacy
-                </ULink>
+                <UNavigationMenu
+                    :highlight="true"
+                    :items="footerItems" />
             </template>
             <template #social>
                 <NavThemeToggle />
