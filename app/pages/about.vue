@@ -116,8 +116,8 @@ useSeo({
                             name="i-lucide-timer"
                             class="text-primary mt-0.5 size-4 shrink-0" />
                         <span>
-                            Nothing is stored permanently. The generated ZIP and its download link
-                            expire after 12 hours, and your upload is deleted with them.
+                            Your audiobook isn't kept. The generated ZIP and its download link
+                            expire after 12 hours, and your uploaded file is deleted with them.
                         </span>
                     </li>
                     <li class="flex gap-3">
