@@ -1,0 +1,19 @@
+# Chaptify production reverse proxy (used by docker-compose.prod.yml).
+#
+# Automatic HTTPS: Caddy obtains and auto-renews a Let's Encrypt certificate for {$DOMAIN} using
+# the ACME HTTP-01 / TLS-ALPN-01 challenge, which needs ports 80+443 reachable from the internet
+# and {$DOMAIN}'s DNS pointing at this host. DOMAIN is injected by the caddy service (from .env).
+#
+# To also serve www, use:  {$DOMAIN}, www.{$DOMAIN} {
+
+{$DOMAIN} {
+    encode zstd gzip
+
+    # Chaptify accepts uploads up to 1.6 GB and enforces its own NUXT_MAX_UPLOAD_BYTES limit.
+    # Do NOT add `request_body { max_size ... }` here — it would reject large uploads (413) at the
+    # proxy before they reach the app.
+    #
+    # reverse_proxy sets X-Forwarded-For with the real client as the right-most hop, which the app
+    # reads when NUXT_TRUST_PROXY=true. Caddy reaches the app over the internal compose network.
+    reverse_proxy chaptify:3000
+}

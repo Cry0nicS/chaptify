@@ -1,0 +1,33 @@
+# Production overlay for Chaptify. NOT auto-loaded — opt in explicitly:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# or set COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml in .env on the VPS so every
+# `docker compose` command includes it. Only docker-compose.override.yml is auto-merged, so local
+# `docker compose up`, `npm run smoke:docker`, and CI keep using the base file alone.
+#
+# This overlay adds a Caddy reverse proxy that terminates TLS (automatic Let's Encrypt HTTPS) and
+# is the only public entrypoint; it reaches the app over the internal compose network as
+# `chaptify:3000`. The base chaptify/worker/cleanup services and the chaptify-storage volume are
+# inherited unchanged.
+services:
+    caddy:
+        image: caddy:2-alpine
+        restart: unless-stopped
+        depends_on:
+            - chaptify
+        ports:
+            - "80:80"
+            - "443:443"
+        environment:
+            # Public host Caddy serves and requests a Let's Encrypt certificate for. Set in .env.
+            # Fails fast if unset so the overlay is never started without a domain.
+            DOMAIN: ${DOMAIN:?set DOMAIN in .env for the production overlay}
+        volumes:
+            - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+            - caddy-data:/data
+            - caddy-config:/config
+
+volumes:
+    caddy-data:
+    caddy-config:

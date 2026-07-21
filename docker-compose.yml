@@ -4,7 +4,11 @@ services:
         build: .
         command: [node, .output/start.mjs]
         ports:
-            - "3000:3000"
+            # Bind to loopback only: the container's plain-HTTP port is never exposed on a public
+            # interface. Local dev (localhost) and `npm run smoke:docker` (127.0.0.1) are
+            # unaffected; in production the Caddy service in docker-compose.prod.yml fronts it and
+            # reaches it over the internal compose network.
+            - "127.0.0.1:3000:3000"
         env_file:
             - path: .env
               required: false
