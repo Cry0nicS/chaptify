@@ -1,3 +1,5 @@
+import {normalizeOrigin} from "#shared/utils/helpers";
+
 /**
  * Resolves the public site origin (scheme + host, no trailing slash) for building absolute SEO
  * URLs (canonical links, og:url, JSON-LD). On the server it reads the configured `NUXT_SITE_URL`
@@ -9,7 +11,7 @@ export const useSiteOrigin = () => {
     const config = useRuntimeConfig();
 
     return useState<string>("site-origin", () => {
-        const configured = (config.siteUrl || "").replace(/\/+$/, "");
+        const configured = normalizeOrigin(config.siteUrl);
 
         if (configured) {
             return configured;
