@@ -1,3 +1,5 @@
+import {normalizeOrigin} from "#shared/utils/helpers";
+
 // Served at GET /sitemap.xml. Lists only the public, indexable pages; API and download routes are
 // intentionally excluded. Absolute URLs are built from the configured NUXT_SITE_URL (siteUrl).
 const PAGES = [
@@ -9,7 +11,7 @@ const PAGES = [
 
 export default defineEventHandler((event) => {
     const config = useRuntimeConfig(event);
-    const origin = (config.siteUrl || "").replace(/\/+$/, "");
+    const origin = normalizeOrigin(config.siteUrl);
 
     const urls = PAGES.map(
         (page) =>
