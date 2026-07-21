@@ -138,11 +138,10 @@ const lastUpdated = "21 July 2026";
                     </p>
                     <p>
                         <span class="text-highlighted">Upload record.</span>
-                        For operating and understanding the service, we keep a record of each upload
-                        that includes the email address you provided and the book title taken from
-                        the filename, along with technical details such as file size and duration.
-                        This record is kept after your audio is deleted and is not removed
-                        automatically.
+                        To run and improve Chaptify, we keep a short record of each upload — the
+                        email you provided and the book title from the filename, plus technical
+                        details like file size and duration. We use it only to operate the service;
+                        we never use it for marketing and never sell it.
                     </p>
                 </div>
             </section>
