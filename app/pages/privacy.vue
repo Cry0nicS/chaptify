@@ -72,28 +72,6 @@ const lastUpdated = "21 July 2026";
 
             <section
                 class="space-y-3"
-                aria-labelledby="privacy-who">
-                <h2
-                    id="privacy-who"
-                    class="font-display text-highlighted text-2xl font-bold tracking-tight">
-                    Who runs Chaptify
-                </h2>
-                <div class="text-muted space-y-3 text-sm">
-                    <p>
-                        The controller responsible for this site is [Operator legal name], based at
-                        [postal address]. Use the
-                        <ULink
-                            to="/contact"
-                            class="text-primary font-medium">
-                            contact page
-                        </ULink>
-                        to reach us with any privacy question or request.
-                    </p>
-                </div>
-            </section>
-
-            <section
-                class="space-y-3"
                 aria-labelledby="privacy-what">
                 <h2
                     id="privacy-what"
