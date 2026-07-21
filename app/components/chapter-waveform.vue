@@ -31,6 +31,14 @@ const barDelay = (chapterIndex: number, barIndex: number) => {
 };
 
 const splitDelay = (chapterIndex: number) => `${900 + chapterIndex * 140}ms`;
+
+// Signature: the book flows through the brand's blue→violet gradient as it splits — each chapter is
+// a step from azure (start) toward iris (end), mirroring the logo gradient.
+const chapterColor = (chapterIndex: number) => {
+    const azurePercent = Math.round((1 - chapterIndex / (chapters.length - 1)) * 100);
+
+    return `color-mix(in oklab, var(--color-azure-500) ${azurePercent}%, var(--color-iris-500))`;
+};
 </script>
 
 <template>
@@ -51,10 +59,11 @@ const splitDelay = (chapterIndex: number) => `${900 + chapterIndex * 140}ms`;
                 <span
                     v-for="(bar, barIndex) in chapter.bars"
                     :key="barIndex"
-                    class="waveform-bar bg-primary min-w-0 flex-1 rounded-full"
-                    :class="chapterIndex % 2 === 0 ? 'opacity-90' : 'opacity-50'"
+                    class="waveform-bar min-w-0 flex-1 rounded-full"
+                    :class="chapterIndex % 2 === 0 ? 'opacity-90' : 'opacity-60'"
                     :style="{
                         'height': `${bar}%`,
+                        'backgroundColor': chapterColor(chapterIndex),
                         '--bar-delay': barDelay(chapterIndex, barIndex)
                     }" />
             </div>
