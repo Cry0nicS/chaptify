@@ -51,7 +51,10 @@ const lastUpdated = "21 July 2026";
                         <UIcon
                             name="i-lucide-eye-off"
                             class="text-primary mt-0.5 size-4 shrink-0" />
-                        <span>No advertising, no third-party trackers, and no profiling.</span>
+                        <span>
+                            No advertising, no profiling, and no cross-site tracking — only
+                            anonymous, cookie-free page statistics.
+                        </span>
                     </li>
                     <li class="flex gap-3">
                         <UIcon
@@ -95,6 +98,14 @@ const lastUpdated = "21 July 2026";
                         Our server records technical request data, including IP addresses, to run
                         the service securely and diagnose problems. The legal basis is our
                         legitimate interest in a working, abuse-resistant service.
+                    </p>
+                    <p>
+                        <span class="text-highlighted">Anonymous usage statistics.</span>
+                        We use Cloudflare Web Analytics to count page views and measure how fast the
+                        site loads. It sets no cookies, stores nothing in your browser, and does not
+                        fingerprint or identify you — we only ever see aggregate numbers. The legal
+                        basis is our legitimate interest in understanding how the site is used and
+                        performing.
                     </p>
                 </div>
             </section>
@@ -207,7 +218,8 @@ const lastUpdated = "21 July 2026";
                                 class="text-primary mt-0.5 size-4 shrink-0" />
                             <span>
                                 <span class="text-highlighted">Cloudflare</span>
-                                manages the domain's DNS.
+                                manages the domain's DNS and provides the cookie-free, anonymous web
+                                analytics described above.
                             </span>
                         </li>
                     </ul>

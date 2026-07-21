@@ -64,7 +64,13 @@ export default defineNuxtConfig({
         mailgunSender: process.env.NUXT_MAILGUN_SENDER || "",
         mailgunBcc: process.env.NUXT_MAILGUN_BCC || "",
         contactRecipient: process.env.NUXT_CONTACT_RECIPIENT || "",
-        contactRateLimit: "5"
+        contactRateLimit: "5",
+
+        public: {
+            // Cloudflare Web Analytics beacon token (NUXT_PUBLIC_CLOUDFLARE_BEACON_TOKEN). The
+            // token is public by design (it ends up in the page HTML). Blank = beacon not loaded.
+            cloudflareBeaconToken: ""
+        }
     },
 
     colorMode: {
