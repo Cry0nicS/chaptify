@@ -156,7 +156,7 @@ Alternatives (all EU, same 20 TB traffic; prices are post-June-2026 per the [pri
 | `CAX21` | Ampere ARM64 | 4 | 8 GB | 80 GB | 10.49 | Valid ARM alternative (see below); currently pricier than CX33 |
 | `CX43` | Intel/AMD | 8 | 16 GB | 160 GB | 15.99 | Headroom for higher concurrency/volume |
 
-**ARM (CAX) is fully supported** but currently costs more than the equivalent CX. The runtime image builds cleanly on arm64: `node:22-alpine3.24` is a multi-arch official image (amd64 + arm64v8) ([Docker Hub node](https://hub.docker.com/_/node)), and the Dockerfile's only extra runtime dependency, `ffmpeg`, is in Alpine's community repo for aarch64. If you choose CAX, build the image on the ARM box (or `docker buildx --platform linux/arm64`). Given CX33 is cheaper today, x86 is the default recommendation.
+**ARM (CAX) is fully supported** but currently costs more than the equivalent CX. The runtime image builds cleanly on arm64: `node:24-alpine3.24` is a multi-arch official image (amd64 + arm64v8) ([Docker Hub node](https://hub.docker.com/_/node)), and the Dockerfile's only extra runtime dependency, `ffmpeg`, is in Alpine's community repo for aarch64. If you choose CAX, build the image on the ARM box (or `docker buildx --platform linux/arm64`). Given CX33 is cheaper today, x86 is the default recommendation.
 
 > Prices exclude VAT and may carry a small IPv4 address surcharge depending on Hetzner's current terms — confirm the exact line items in the Hetzner Console at order time. (The specific IPv4 monthly fee was not verified against a primary source for this document.)
 
@@ -325,7 +325,7 @@ docker compose ps                       # chaptify, worker, cleanup, caddy
 docker compose logs -f chaptify caddy   # watch for "listening on :3000" and Caddy startup
 ```
 
-The image is Node 22 Alpine + FFmpeg, runs as the non-root `appuser`, and the API container healthcheck hits `/api/health` (per the Dockerfile and `docker-compose.yml`). Confirm the app directly on the VPS loopback (bypassing Caddy):
+The image is Node 24 Alpine + FFmpeg, runs as the non-root `appuser`, and the API container healthcheck hits `/api/health` (per the Dockerfile and `docker-compose.yml`). Confirm the app directly on the VPS loopback (bypassing Caddy):
 
 ```bash
 curl -fsS http://127.0.0.1:3000/api/health && echo OK
@@ -450,7 +450,7 @@ Chaptify sends completion emails via Mailgun. You must verify the sending domain
 
 The **only state worth backing up is the SQLite database** at `/data/chaptify/database/chaptify.sqlite` — job files are ephemeral, but `upload_history` is permanent ([backend.md](backend.md)). SQLite runs in **WAL mode**, so a raw file copy can capture an inconsistent state; use SQLite's **online backup API** (`.backup`), which is safe under concurrent writers ([SQLite backup API](https://www.sqlite.org/backup.html), [SQLite WAL](https://www.sqlite.org/wal.html)).
 
-The `node:22-alpine` image does not ship the `sqlite3` CLI, so run the backup from a throwaway Alpine container that mounts the same volume. Create `/opt/chaptify/backup.sh`:
+The `node:24-alpine` image does not ship the `sqlite3` CLI, so run the backup from a throwaway Alpine container that mounts the same volume. Create `/opt/chaptify/backup.sh`:
 
 ```bash
 #!/usr/bin/env bash

@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  NODE_VERSION: 22
+  NODE_VERSION: 24
 
 # Cancel superseded runs on the same branch/PR so a new push doesn't queue behind stale jobs.
 concurrency:
