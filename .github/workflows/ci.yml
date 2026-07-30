@@ -110,11 +110,21 @@ jobs:
       - name: Validate docker compose
         run: docker compose config
       # Both production overlays are validated here because neither is exercised by the smoke test
-      # below, and both rely on the `!reset` tag that older Compose versions ignore silently.
+      # below. Asserting the RENDERED config, not just that it parses: the overlays drop inherited
+      # list values with `!reset` / `!override`, and a Compose older than 2.24.4 ignores an unknown
+      # tag instead of failing — which would silently keep the worker's host-gateway alias and the
+      # API's published port in production.
       - name: Validate production overlays
         run: |
-          DOMAIN=example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null
-          docker compose -f docker-compose.yml -f docker-compose.vps.yml config > /dev/null
+          set -euo pipefail
+          prod=$(DOMAIN=example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml config)
+          vps=$(docker compose -f docker-compose.yml -f docker-compose.vps.yml config)
+          echo "$prod" | grep -q 'host.docker.internal' && { echo "prod overlay still has the host-gateway alias"; exit 1; }
+          echo "$vps" | grep -q 'host.docker.internal' && { echo "vps overlay still has the host-gateway alias"; exit 1; }
+          echo "$vps" | grep -q 'published' && { echo "vps overlay still publishes a host port"; exit 1; }
+          echo "$vps" | grep -q 'chaptify-proxy' || { echo "vps overlay lost the dedicated proxy network"; exit 1; }
+          echo "$vps" | grep -q 'edge' && { echo "vps overlay must not put the API on the shared edge network"; exit 1; }
+          echo "Rendered overlays match their intent."
       - name: Build Docker Compose stack
         run: docker compose build
       - name: Start Docker Compose stack

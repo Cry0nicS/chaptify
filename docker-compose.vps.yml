@@ -7,23 +7,32 @@
 #
 # Use this INSTEAD of docker-compose.prod.yml, never both: that overlay ships Chaptify's own Caddy
 # and publishes 80/443, which would collide with the central proxy. Here Chaptify publishes no host
-# port at all and is reachable only as `chaptify:3000` on the external `edge` network the central
-# Caddy also joins.
+# port at all and is reachable only as `chaptify:3000` on a network shared with nothing but the
+# proxy.
 #
-# Requires Compose 2.24+ for the `!reset` tag, and the network to exist first:
+# Requires Compose 2.24.4+ (for the `!reset` and `!override` tags — older versions ignore an unknown
+# tag instead of failing, which would silently keep the values this file means to drop), and the
+# network to exist first:
 #
-#   docker network create edge
+#   docker network create chaptify-proxy
 services:
     chaptify:
-        # The API is the ONLY container on the proxy network. Nothing else in this stack serves
-        # requests, and joining `edge` would expose the worker and cleanup to every other service on
-        # that network for no reason. Coordination between the three happens through SQLite on the
-        # shared storage volume, never over the network.
+        # A DEDICATED two-member network (this API + the central Caddy), deliberately NOT the shared
+        # `edge` network the other services use.
+        #
+        # This is what makes NUXT_TRUST_PROXY=true safe. That setting trusts the right-most
+        # X-Forwarded-For hop from whoever connects, which is only sound while the sole thing that
+        # can connect is a proxy that overwrites the header. On a shared network every other
+        # container — including a headless browser that fetches untrusted web content — can reach
+        # this port directly and forge the header, letting a compromised neighbour rotate through
+        # fake client identities to evade per-IP limits, or burn a chosen victim IP's budget.
+        # Removing the host port is not sufficient on its own; container-to-container traffic on a
+        # shared bridge is unrestricted.
         networks:
-            - edge
-        # No published host port: the central Caddy reaches the API over `edge`. `!reset` is
-        # required because list fields in an override are appended, not replaced — `ports: []` would
-        # leave the inherited loopback binding in place.
+            - chaptify-proxy
+        # No published host port: the central Caddy reaches the API over `chaptify-proxy`. `!reset`
+        # is required because list fields in an override are appended, not replaced — `ports: []`
+        # would leave the inherited loopback binding in place.
         ports: !reset []
         volumes: !override
             # Dedicated host path rather than a named volume, so Chaptify's transient audio is
@@ -36,9 +45,10 @@ services:
         mem_limit: 512m
 
     worker:
-        # The FFmpeg process handles fully untrusted uploaded media, so it stays off `edge`
-        # entirely. It keeps the stack's default bridge network because it still needs plain egress
-        # to the Mailgun API to send completion mail — it accepts no inbound connections.
+        # The FFmpeg process handles fully untrusted uploaded media, so it joins neither the proxy
+        # network nor the shared `edge` one. It keeps the stack's own default bridge because it still
+        # needs plain egress to the Mailgun API to send completion mail — it accepts no inbound
+        # connections, and it cannot reach the API's port either.
         extra_hosts: !reset []
         volumes: !override
             - /srv/chaptify-data:/data/chaptify
@@ -61,5 +71,7 @@ services:
         mem_limit: 256m
 
 networks:
-    edge:
+    # Created out of band so its membership is an explicit operator decision: only the central Caddy
+    # and this API belong on it. `docker network create chaptify-proxy`
+    chaptify-proxy:
         external: true
