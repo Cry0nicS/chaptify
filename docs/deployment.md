@@ -75,9 +75,21 @@ test's Mailgun mock. `!reset` is required because Compose *appends* to list fiel
 
 If the box also runs other services behind one shared Caddy, use `docker-compose.vps.yml` instead of
 this overlay (never both — this one publishes 80/443 and would collide with the central proxy). That
-file puts only the API on the external `edge` network, keeps the worker and cleanup off it, swaps the
-named volume for a `/srv/chaptify-data` bind mount, and applies CPU/memory caps sized for a shared
-4 vCPU / 8 GB box.
+file puts the API alone with the proxy on a dedicated external `chaptify-proxy` network, keeps the
+worker and cleanup off every shared network, swaps the named volume for a `/srv/chaptify-data` bind
+mount, and applies CPU/memory caps sized for a shared 4 vCPU / 8 GB box.
+
+> **Why a dedicated network and not the shared one.** `NUXT_TRUST_PROXY=true` trusts the right-most
+> `X-Forwarded-For` hop from whoever connects, so it is only sound while a header-overwriting proxy is
+> the *only* thing that can connect. Removing the published host port does not achieve that on a
+> shared Docker network: container-to-container traffic on a bridge is unrestricted, so any other
+> service on it — including a headless browser that fetches untrusted content — can reach the API
+> directly and set the header freely. Measured on a shared network: a neighbour container spent forged
+> identity `203.0.113.99` down to a 429, then switched to `198.51.100.7` and got a fresh budget, i.e.
+> unlimited evasion of per-IP limits plus the ability to exhaust a chosen real client's budget. On the
+> dedicated network the same container cannot reach the API at all. Requires Compose **2.24.4+** for
+> the `!reset`/`!override` tags; older versions ignore an unknown tag and silently keep the values the
+> overlay means to drop, which CI now asserts against.
 
 ### R.3 Caddy config (`caddy/Caddyfile`, new)
 
