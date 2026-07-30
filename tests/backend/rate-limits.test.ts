@@ -1,6 +1,10 @@
 import {afterAll, beforeAll, describe, expect, it, vi} from "vitest";
 
-import {checkUploadRateLimit, getClientIp} from "../../server/utils/backend/rate-limits";
+import {
+    checkUploadRateLimit,
+    describeTrustProxyMode,
+    getClientIp
+} from "../../server/utils/backend/rate-limits";
 
 import {registerBackendTestHooks} from "./helpers";
 
@@ -93,6 +97,18 @@ describe("client IP resolution and rate limiting", () => {
         // A v4 peer must not match a v6 trust entry (family mismatch) → not trusted → socket peer.
         const v4Peer = makeIpEvent("198.51.100.10", {"x-forwarded-for": "203.0.113.62"});
         expect(getClientIp(v4Peer, "2001:db8::/32")).toBe("198.51.100.10");
+    });
+
+    it("describes each trust mode distinguishably for the startup log", () => {
+        // The log line is how a deploy is verified, so each mode must be tellable apart and the
+        // list mode must name the configured proxies.
+        expect(describeTrustProxyMode("")).toContain("direct connection");
+        expect(describeTrustProxyMode("false")).toContain("direct connection");
+        expect(describeTrustProxyMode("true")).toContain("right-most X-Forwarded-For");
+        expect(describeTrustProxyMode("true")).toContain("solely through a trusted proxy");
+        expect(describeTrustProxyMode("127.0.0.1,172.16.0.0/12")).toContain(
+            "127.0.0.1, 172.16.0.0/12"
+        );
     });
 
     it("enforces the per-key upload window and isolates distinct keys", () => {
