@@ -2,7 +2,7 @@
 
 # === Build Stage ===
 # Pin the Alpine minor so the FFmpeg/ffprobe build shipped in the runtime stage is reproducible.
-FROM node:22-alpine3.24 AS builder
+FROM node:24-alpine3.24 AS builder
 WORKDIR /app
 
 RUN apk add --no-cache python3 make g++
@@ -20,7 +20,7 @@ RUN npm run build
 # === Production Dependencies Stage ===
 # Needs the C toolchain to compile better-sqlite3, but nothing from this stage ships except the
 # finished node_modules tree — the toolchain stays out of the runtime image.
-FROM node:22-alpine3.24 AS deps
+FROM node:24-alpine3.24 AS deps
 WORKDIR /app
 
 RUN apk add --no-cache python3 make g++
@@ -30,7 +30,7 @@ RUN npm rebuild better-sqlite3
 
 
 # === Production Stage ===
-FROM node:22-alpine3.24 AS production
+FROM node:24-alpine3.24 AS production
 WORKDIR /app
 
 # Set runtime environment

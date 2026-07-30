@@ -9,7 +9,7 @@ export default defineNuxtConfig({
 
     modules: ["@nuxt/eslint", "@nuxt/ui"],
 
-    // The server runs on Node 22 only; raise the Nitro esbuild target above es2019 so modern
+    // The server runs on Node 24 only; raise the Nitro esbuild target above es2019 so modern
     // syntax such as BigInt literals (used in IPv6 CIDR matching) is supported without warnings.
     nitro: {
         esbuild: {
@@ -34,6 +34,8 @@ export default defineNuxtConfig({
         maxQueuedJobs: "10",
         maxConcurrentUploads: "2",
         uploadIdleTimeoutSeconds: "30",
+        uploadMaxSeconds: "7200",
+        uploadMinBytesPerSecond: "16384",
         trustProxy: "",
         perIpUploadLimit: "5",
         perIpJobLimit: "5",

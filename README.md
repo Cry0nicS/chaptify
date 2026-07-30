@@ -128,15 +128,24 @@ Start in these files for common changes:
 
 ## How to update dependencies
 
-> **Use Node 22 and regenerate the lockfile on Linux.** This project targets Node 22 (see `.nvmrc`
+> **Use Node 24 and regenerate the lockfile on Linux.** This project targets Node 24 (see `.nvmrc`
 > and `package.json` `engines`); run `nvm use` before installing. Native build tooling (rollup, oxc,
 > rolldown, tailwind-oxide, unrs-resolver, lightningcss) ships per-platform binaries, and npm on
 > macOS omits some Linux-only optional deps (e.g. `@emnapi/*`, `cac`) from `package-lock.json`, which
 > makes `npm ci` fail on the Linux CI runner and in the Docker build. After changing any dependency,
 > regenerate the lockfile with **`npm run lockfile:refresh`** — it uses Docker to resolve on
-> `linux/amd64` + `node:22` (matching CI, regardless of your machine's OS/arch) and updates
+> `linux/amd64` + `node:24` (matching CI, regardless of your machine's OS/arch) and updates
 > `package-lock.json` only, leaving your local `node_modules` untouched. Commit the result. For your
 > own `node_modules`, a normal `npm install` is fine — just don't commit a macOS-generated lockfile.
+
+> **Why `oxc-parser` is an explicit devDependency.** Nothing in our code imports it. It is the
+> `parseSync` implementation that `oxc-walker` (via `unimport`/`unctx`) needs during `nuxt prepare`,
+> and it reaches us only as an **optional peer dependency**. npm 10 installed those; **npm 11 — the
+> version bundled with Node 24 — does not**, so a fresh `npm ci` produced a tree without it and
+> `npm run postinstall` failed with `oxc-walker: could not resolve a parseSync implementation`. Nuxt
+> keeps its own pinned copy nested under `node_modules/nuxt/`, which the top-level `oxc-walker`
+> cannot resolve into, so the hoisted copy has to be declared. Don't remove it unless a `npm ci` +
+> `npm run build` in a clean `node:24-alpine` container still passes without it.
 
 ### Minor version updates
 

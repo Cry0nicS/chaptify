@@ -3,12 +3,12 @@
     "private": true,
     "type": "module",
     "engines": {
-        "node": ">=22 <23"
+        "node": ">=24 <25"
     },
     "scripts": {
         "api:start": "node .output/start.mjs",
         "build": "nuxt build && npm run worker:build && npm run cleanup:build && npm run start:build",
-        "cleanup:build": "esbuild server/cleanup.ts --bundle --platform=node --format=esm --target=node22 --outfile=.output/cleanup.mjs --external:better-sqlite3 --external:mailgun.js --external:formidable --external:archiver",
+        "cleanup:build": "esbuild server/cleanup.ts --bundle --platform=node --format=esm --target=node24 --outfile=.output/cleanup.mjs --external:better-sqlite3 --external:mailgun.js --external:formidable --external:archiver",
         "cleanup:dev": "tsx server/cleanup.ts",
         "cleanup:start": "node .output/cleanup.mjs",
         "clean": "npx nuxi cleanup && rm -rf node_modules/ && rm -rf .nuxt/ && rm package-lock.json",
@@ -17,13 +17,13 @@
         "format-check": "prettier --check \"**/*.{html,js,json,jsx,css,ts,tsx,vue,scss}\"",
         "generate": "nuxt generate",
         "lint": "eslint .",
-        "lockfile:refresh": "docker run --rm --platform=linux/amd64 -u \"$(id -u):$(id -g)\" -e HOME=/tmp -v \"$PWD\":/w -w /w node:22 npm install --package-lock-only --ignore-scripts --no-audit --no-fund",
+        "lockfile:refresh": "docker run --rm --platform=linux/amd64 -u \"$(id -u):$(id -g)\" -e HOME=/tmp -v \"$PWD\":/w -w /w node:24 npm install --package-lock-only --ignore-scripts --no-audit --no-fund",
         "preview": "node .output/start.mjs",
         "postinstall": "nuxt prepare",
         "smoke:docker": "node scripts/docker-smoke.mjs",
         "test": "vitest run",
-        "start:build": "esbuild server/start.ts --bundle --platform=node --format=esm --target=node22 --outfile=.output/start.mjs",
-        "worker:build": "esbuild server/worker.ts --bundle --platform=node --format=esm --target=node22 --outfile=.output/worker.mjs --external:better-sqlite3 --external:mailgun.js --external:formidable --external:archiver",
+        "start:build": "esbuild server/start.ts --bundle --platform=node --format=esm --target=node24 --outfile=.output/start.mjs",
+        "worker:build": "esbuild server/worker.ts --bundle --platform=node --format=esm --target=node24 --outfile=.output/worker.mjs --external:better-sqlite3 --external:mailgun.js --external:formidable --external:archiver",
         "worker:dev": "tsx server/worker.ts",
         "worker:start": "node .output/worker.mjs",
         "type-check": "nuxt typecheck"
@@ -50,6 +50,7 @@
         "esbuild": "^0.28.1",
         "eslint": "^10.7.0",
         "lint-staged": "^16.4.0",
+        "oxc-parser": "^0.142.0",
         "prettier": "^3.9.5",
         "prettier-plugin-tailwindcss": "^0.8.0",
         "simple-git-hooks": "^2.13.1",
