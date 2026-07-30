@@ -6,6 +6,22 @@
 #
 # To also serve www, use:  {$DOMAIN}, www.{$DOMAIN} {
 
+# Global options must be the first block in the file.
+{
+    servers {
+        timeouts {
+            # Hard deadline for reading a request (headers plus body) — defense in depth behind the
+            # app's own NUXT_UPLOAD_MAX_SECONDS / NUXT_UPLOAD_MIN_BYTES_PER_SECOND bounds, so a
+            # trickling upload cannot hold a connection open forever even if the app fails to
+            # terminate it. Keep this ABOVE NUXT_UPLOAD_MAX_SECONDS (default 2h) so the app is
+            # normally the side that aborts and cleans up the partial upload; raising that variable
+            # means raising this too. Downloads are unaffected (they are writes, not reads).
+            read_body 3h
+            read_header 30s
+        }
+    }
+}
+
 {$DOMAIN} {
     encode zstd gzip
 

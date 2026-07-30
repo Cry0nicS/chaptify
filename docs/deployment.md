@@ -65,8 +65,8 @@ Let's Encrypt certificate, and reverse-proxies to the app over the internal comp
 ### R.3 Caddy config (`caddy/Caddyfile`, new)
 
 Automatic HTTPS for `{$DOMAIN}` → `reverse_proxy chaptify:3000`, with **no request-body cap** so
-1.6 GB uploads pass through (the app enforces its own limit). Mounted read-only into the Caddy
-container.
+1.6 GB uploads pass through (the app enforces its own limit), plus a global `read_body` deadline as
+defense in depth against a trickling upload. Mounted read-only into the Caddy container.
 
 ### R.4 `.env` — `DOMAIN` and the overlay shortcut
 
@@ -348,6 +348,15 @@ The `caddy` service (`caddy:2-alpine`) publishes 80/443, mounts the committed `c
 The committed `caddy/Caddyfile`:
 
 ```caddyfile
+{
+    servers {
+        timeouts {
+            read_body 3h
+            read_header 30s
+        }
+    }
+}
+
 {$DOMAIN} {
     encode zstd gzip
     reverse_proxy chaptify:3000
@@ -358,6 +367,12 @@ Notes:
 
 - Caddy **overwrites** `X-Forwarded-For` with the real client IP (it does not trust a client-supplied value by default) and sets `X-Forwarded-Proto` / `X-Forwarded-Host`, which is exactly what `NUXT_TRUST_PROXY=true` consumes (3.2). Verified empirically: a forged `X-Forwarded-For` from the client is discarded, so the app always keys per-IP limits on the real client.
 - Caddy **streams request bodies and imposes no default body-size cap**, so 1.6 GB uploads pass through to the app (which enforces its own `NUXT_MAX_UPLOAD_BYTES`). Do **not** add a restrictive `request_body { max_size ... }` directive, or you will re-introduce the very limit you grey-clouded to avoid.
+- The global `timeouts` block bounds how long a client may take to send a request. `read_body 3h` is
+  a backstop only: the app already aborts a trickling upload via `NUXT_UPLOAD_MAX_SECONDS` (2h) and
+  `NUXT_UPLOAD_MIN_BYTES_PER_SECOND`, and it is the side that must terminate the request so the
+  partial file, storage reservation, and upload slot are released. Keep this value **above**
+  `NUXT_UPLOAD_MAX_SECONDS`, and raise it if you raise that variable. Responses (downloads) are
+  writes, not reads, so they are unaffected.
 - Caddy redirects HTTP→HTTPS automatically, so plain-HTTP visitors are upgraded at the origin.
 - To also serve `www`, add it to the site line (`{$DOMAIN}, www.{$DOMAIN} { … }`) and create the matching DNS record (Phase 5).
 

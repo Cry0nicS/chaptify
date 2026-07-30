@@ -28,7 +28,8 @@ import {
     estimateUploadReservationBytes,
     MULTIPART_OVERHEAD_BYTES,
     parseConvertFields,
-    parseMultipartUpload
+    parseMultipartUpload,
+    uploadLimitsFromConfig
 } from "../utils/backend/upload-request";
 
 /**
@@ -138,8 +139,7 @@ export default defineEventHandler(async (event) => {
         const parsed = await parseMultipartUpload(
             event,
             config.storageRoot,
-            config.maxUploadBytes,
-            config.uploadIdleTimeoutSeconds * 1000,
+            uploadLimitsFromConfig(config),
             (path) => {
                 tempPaths.push(path);
             }

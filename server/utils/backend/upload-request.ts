@@ -1,4 +1,5 @@
 import type {H3Event} from "h3";
+import type {BackendConfig} from "./config";
 import {mkdir} from "node:fs/promises";
 import {join} from "node:path";
 import formidable from "formidable";
@@ -29,6 +30,39 @@ export interface ParsedUpload {
     files: formidable.Files;
 }
 
+/**
+ * Bounds on a single multipart upload request.
+ *
+ * The idle timeout only catches a client that stops sending altogether: it resets on every received
+ * chunk, so a client that trickles a byte every few seconds keeps it alive indefinitely and holds
+ * one of the very few concurrent-upload slots hostage. `maxDurationMs` and `minBytesPerSecond`
+ * bound the request as a whole and close that gap. Any of the three set to `0` disables just that
+ * bound.
+ */
+export interface UploadLimits {
+    maxUploadBytes: number;
+    idleTimeoutMs: number;
+    maxDurationMs: number;
+    minBytesPerSecond: number;
+}
+
+/**
+ * Grace period before the sustained-rate floor starts being enforced, so TLS setup, request
+ * queueing, and TCP slow start cannot fail an upload that is merely getting going. The hard
+ * lifetime ceiling applies from the first byte and is unaffected by this.
+ */
+export const UPLOAD_RATE_GRACE_MS = 15_000;
+
+/** How often the total-duration and sustained-rate bounds are re-evaluated. */
+const UPLOAD_WATCHDOG_INTERVAL_MS = 1_000;
+
+export const uploadLimitsFromConfig = (config: BackendConfig): UploadLimits => ({
+    maxUploadBytes: config.maxUploadBytes,
+    idleTimeoutMs: config.uploadIdleTimeoutSeconds * 1000,
+    maxDurationMs: config.uploadMaxSeconds * 1000,
+    minBytesPerSecond: config.uploadMinBytesPerSecond
+});
+
 export interface UploadFields {
     file: formidable.File;
     originalFilename: string;
@@ -54,17 +88,18 @@ export const collectUploadedFilePaths = (files: formidable.Files): string[] =>
  * Streams one multipart upload to a temporary file inside the storage root.
  *
  * `onFileBegin` reports each temp path as soon as formidable opens it so the caller can clean up
- * even if the request aborts mid-stream. The socket idle timeout aborts a stalled client so a slow
- * drip cannot hold a scarce concurrent-upload slot; it resets on every chunk, so a large but
- * steadily-transferring upload is never penalized.
+ * even if the request aborts mid-stream. Three independent bounds (see `UploadLimits`) abort a
+ * client that cannot be allowed to keep its upload slot: an inactivity timeout, a hard total
+ * lifetime, and a sustained-throughput floor. Every abort path destroys the request, which rejects
+ * this promise so the caller deletes the partial file and releases the slot.
  */
 export const parseMultipartUpload = async (
     event: H3Event,
     storageRoot: string,
-    maxUploadBytes: number,
-    uploadIdleTimeoutMs: number,
+    limits: UploadLimits,
     onFileBegin: (path: string) => void
 ): Promise<ParsedUpload> => {
+    const {maxUploadBytes, idleTimeoutMs, maxDurationMs, minBytesPerSecond} = limits;
     const uploadDirectory = ensurePathInside(storageRoot, join(storageRoot, "uploads"));
     await mkdir(uploadDirectory, {recursive: true, mode: 0o700});
 
@@ -93,6 +128,9 @@ export const parseMultipartUpload = async (
 
     return await new Promise<ParsedUpload>((resolve, reject) => {
         let settled = false;
+        let watchdog: NodeJS.Timeout | null = null;
+        let receivedBytes = 0;
+        const startedAtMs = Date.now();
 
         function onClose() {
             // Release the slot immediately if the client disconnects before the body finishes,
@@ -111,6 +149,11 @@ export const parseMultipartUpload = async (
             request.setTimeout(0);
             request.off("close", onClose);
 
+            if (watchdog) {
+                clearInterval(watchdog);
+                watchdog = null;
+            }
+
             if (error || !result) {
                 reject(error instanceof Error ? error : new Error(String(error)));
                 return;
@@ -122,10 +165,41 @@ export const parseMultipartUpload = async (
         // Abort a stalled upload so a slow client cannot hold a scarce concurrent-upload slot. The
         // socket timeout resets on every received chunk, so it only fires on genuine inactivity and
         // never penalizes a large but steadily-transferring upload.
-        if (uploadIdleTimeoutMs > 0) {
-            request.setTimeout(uploadIdleTimeoutMs, () => {
+        if (idleTimeoutMs > 0) {
+            request.setTimeout(idleTimeoutMs, () => {
                 request.destroy(new Error("Upload idle timeout exceeded"));
             });
+        }
+
+        // Because the idle timer above is reset by any traffic at all, bound the request as a whole
+        // too, or a deliberate byte-per-interval drip would occupy an upload slot forever. Progress
+        // is read from formidable rather than a second `data` listener on the request, which would
+        // resume the stream before formidable subscribes and lose the first chunks.
+        if (maxDurationMs > 0 || minBytesPerSecond > 0) {
+            form.on("progress", (bytesReceived) => {
+                receivedBytes = bytesReceived;
+            });
+
+            watchdog = setInterval(() => {
+                const elapsedMs = Date.now() - startedAtMs;
+
+                if (maxDurationMs > 0 && elapsedMs >= maxDurationMs) {
+                    request.destroy(new Error("Upload total time limit exceeded"));
+
+                    return;
+                }
+
+                // Compared as a product so the floor holds from the first evaluation without
+                // dividing by a possibly-zero elapsed time.
+                if (
+                    minBytesPerSecond > 0 &&
+                    elapsedMs >= UPLOAD_RATE_GRACE_MS &&
+                    receivedBytes * 1000 < minBytesPerSecond * elapsedMs
+                ) {
+                    request.destroy(new Error("Upload transfer rate below the minimum"));
+                }
+            }, UPLOAD_WATCHDOG_INTERVAL_MS);
+            watchdog.unref();
         }
 
         request.on("close", onClose);

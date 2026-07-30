@@ -53,6 +53,23 @@ The storage root must be writable by both API and worker. It is never served sta
 The status endpoint never returns download tokens, submitted email addresses, internal paths, or
 provider diagnostics.
 
+### Upload request bounds
+
+Only `NUXT_MAX_CONCURRENT_UPLOADS` requests stream a body at a time, so an upload that never ends
+is a denial of service. Three independent bounds apply to each upload request, and any of them
+aborts the request, deletes the partial file, releases the storage reservation, and frees the slot:
+
+- `NUXT_UPLOAD_IDLE_TIMEOUT_SECONDS` — no data received for this long. Reset by every chunk, so it
+  only catches a fully stalled client and never penalizes a large, steady transfer.
+- `NUXT_UPLOAD_MAX_SECONDS` — hard total lifetime, measured from the first byte and never reset.
+- `NUXT_UPLOAD_MIN_BYTES_PER_SECOND` — average throughput floor over the whole request, enforced
+  after a 15-second grace period for connection setup and TCP slow start.
+
+The last two exist because the idle timeout alone is defeated by a client that trickles a byte
+every few seconds; that client is now dropped by the throughput floor. Caddy applies its own
+`read_body` deadline as defense in depth (`caddy/Caddyfile`), set above `NUXT_UPLOAD_MAX_SECONDS`
+so the application stays the component that terminates the request and does the cleanup.
+
 ## States
 
 Processing states are `queued`, `processing`, `ready`, `failed`, and `expired`.
@@ -194,6 +211,9 @@ Operational defaults:
 - `NUXT_MAX_UPLOAD_BYTES=1610612736`
 - `NUXT_MAX_QUEUED_JOBS=10`
 - `NUXT_MAX_CONCURRENT_UPLOADS=2`
+- `NUXT_UPLOAD_IDLE_TIMEOUT_SECONDS=30`
+- `NUXT_UPLOAD_MAX_SECONDS=7200`
+- `NUXT_UPLOAD_MIN_BYTES_PER_SECOND=16384`
 - `NUXT_PER_IP_UPLOAD_LIMIT=5`
 - `NUXT_PER_IP_JOB_LIMIT=5`
 - `NUXT_DOWNLOAD_RATE_LIMIT=30`
