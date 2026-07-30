@@ -40,6 +40,8 @@ export const makeConfig = (storageRoot: string): BackendConfig => ({
     maxQueuedJobs: 10,
     maxConcurrentUploads: 2,
     uploadIdleTimeoutSeconds: 30,
+    uploadMaxSeconds: 7_200,
+    uploadMinBytesPerSecond: 16_384,
     trustProxy: "",
     perIpUploadLimit: 5,
     perIpJobLimit: 5,
