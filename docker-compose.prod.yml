@@ -9,8 +9,15 @@
 # This overlay adds a Caddy reverse proxy that terminates TLS (automatic Let's Encrypt HTTPS) and
 # is the only public entrypoint; it reaches the app over the internal compose network as
 # `chaptify:3000`. The base chaptify/worker/cleanup services and the chaptify-storage volume are
-# inherited unchanged.
+# inherited with their containment (cap_drop, no-new-privileges, read-only rootfs, pids limits)
+# unchanged; the only base setting production drops is the worker's host-gateway alias.
 services:
+    worker:
+        # `!reset` (Compose 2.24+) is required because override files *append* to list fields —
+        # `extra_hosts: []` would silently keep the inherited entry. The alias exists only for the
+        # local smoke test's Mailgun mock; production email goes to Mailgun over the internet.
+        extra_hosts: !reset []
+
     caddy:
         image: caddy:2-alpine
         restart: unless-stopped

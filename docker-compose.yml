@@ -16,6 +16,17 @@ services:
             NUXT_STORAGE_ROOT: /data/chaptify
         volumes:
             - chaptify-storage:/data/chaptify
+        # Containment applied to all three services: no capabilities are needed (the image already
+        # runs as non-root `appuser` and binds an unprivileged port), setuid binaries can never
+        # escalate, and the root filesystem is immutable so the only writable persistent path is the
+        # storage volume below. `pids_limit` bounds a fork bomb.
+        cap_drop: [ALL]
+        security_opt:
+            - no-new-privileges:true
+        read_only: true
+        tmpfs:
+            - /tmp:size=64m,mode=1777,noexec,nosuid,nodev
+        pids_limit: 256
         healthcheck:
             test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
             interval: 30s
@@ -29,6 +40,9 @@ services:
         # Give the worker time to abort in-flight FFmpeg work and unwind before SIGKILL.
         stop_grace_period: 30s
         extra_hosts:
+            # Only so `npm run smoke:docker` can point the worker at a Mailgun mock running on the
+            # host. Production overlays remove it with `extra_hosts: !reset []` — nothing in the
+            # application resolves this name.
             - "host.docker.internal:host-gateway"
         env_file:
             - path: .env
@@ -42,6 +56,16 @@ services:
             NUXT_MAILGUN_BCC: ${NUXT_MAILGUN_BCC:-}
         volumes:
             - chaptify-storage:/data/chaptify
+        # This is the container that runs FFmpeg over fully untrusted media, so it gets the same
+        # containment as the API plus a larger pid budget (FFmpeg threads count as pids). Resource
+        # caps are environment-specific and live in the production overlays.
+        cap_drop: [ALL]
+        security_opt:
+            - no-new-privileges:true
+        read_only: true
+        tmpfs:
+            - /tmp:size=64m,mode=1777,noexec,nosuid,nodev
+        pids_limit: 512
         restart: unless-stopped
         depends_on:
             - chaptify
@@ -57,6 +81,17 @@ services:
             NUXT_CLEANUP_INTERVAL_SECONDS: ${NUXT_CLEANUP_INTERVAL_SECONDS:-300}
         volumes:
             - chaptify-storage:/data/chaptify
+        # Cleanup only reads SQLite and unlinks expired files under the storage root — it opens no
+        # sockets, so it gets no network stack at all. If a future cleanup step ever needs egress,
+        # that is a deliberate change, not a default to loosen quietly.
+        network_mode: none
+        cap_drop: [ALL]
+        security_opt:
+            - no-new-privileges:true
+        read_only: true
+        tmpfs:
+            - /tmp:size=16m,mode=1777,noexec,nosuid,nodev
+        pids_limit: 128
         restart: unless-stopped
         depends_on:
             - chaptify
