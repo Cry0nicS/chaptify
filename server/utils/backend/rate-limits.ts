@@ -274,6 +274,28 @@ const parseTrustPolicy = (trustProxy: string): TrustPolicy => {
 };
 
 /**
+ * Describes the effective trusted-proxy policy for startup logging.
+ *
+ * Both misconfigurations are silent at runtime: behind a proxy with no policy every client collapses
+ * into one rate-limit identity (one abuser exhausts everyone's budget), and a policy set on a
+ * directly-reachable app lets a client forge its own identity. Neither is detectable from the
+ * outside, so the resolved mode is stated in the log where it can be checked after a deploy.
+ */
+export const describeTrustProxyMode = (trustProxy: string): string => {
+    const policy = parseTrustPolicy(trustProxy);
+
+    if (policy.mode === "none") {
+        return "per-IP limits key on the direct connection; forwarded headers are ignored. Correct only when clients reach this process directly — behind a reverse proxy every client would share one identity.";
+    }
+
+    if (policy.mode === "all") {
+        return "per-IP limits key on the right-most X-Forwarded-For hop. Safe only while this process is reachable solely through a trusted proxy that overwrites that header.";
+    }
+
+    return `per-IP limits key on the right-most X-Forwarded-For hop that is not a listed proxy, and only when the peer is one of: ${policy.entries.join(", ")}.`;
+};
+
+/**
  * Resolves the client identity used to key every per-IP abuse control.
  *
  * The direct socket peer is authoritative by default; forwarded headers are consulted only when the
