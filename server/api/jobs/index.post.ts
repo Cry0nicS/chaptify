@@ -24,6 +24,7 @@ import {
     getAvailableStorageBytes
 } from "../../utils/backend/storage";
 import {
+    classifyUploadRequestError,
     collectUploadedFilePaths,
     estimateUploadReservationBytes,
     MULTIPART_OVERHEAD_BYTES,
@@ -279,26 +280,17 @@ export default defineEventHandler(async (event) => {
             });
         }
 
-        if (
-            typeof error === "object" &&
-            error !== null &&
-            ("httpCode" in error || "message" in error)
-        ) {
-            const httpCode = "httpCode" in error ? Number(error.httpCode) : 0;
-            const message = "message" in error ? String(error.message) : "";
+        // Client-side failures (a malformed body, a cancelled upload, one of the upload bounds
+        // firing) get a 4xx instead of escaping as an unhandled 500. Anything unrecognized still
+        // falls through, so genuine server faults stay visible as 500s.
+        const fault = classifyUploadRequestError(error);
 
-            if (httpCode === 413 || message.toLowerCase().includes("maxfilesize")) {
-                throw createError({
-                    statusCode: 413,
-                    statusMessage: "File too large",
-                    data: {
-                        error: {
-                            code: "FILE_TOO_LARGE",
-                            message: "The uploaded audiobook is larger than the configured limit."
-                        }
-                    }
-                });
-            }
+        if (fault) {
+            throw createError({
+                statusCode: fault.statusCode,
+                statusMessage: fault.statusMessage,
+                data: {error: {code: fault.code, message: fault.message}}
+            });
         }
 
         throw error;

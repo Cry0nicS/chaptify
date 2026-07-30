@@ -3,13 +3,16 @@ import type {UploadLimits} from "../../server/utils/backend/upload-request";
 import {Buffer} from "node:buffer";
 import {join} from "node:path";
 import {Readable} from "node:stream";
+import {errors as formidableErrors} from "formidable";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {
+    classifyUploadRequestError,
     parseConvertFields,
     parseMultipartUpload,
     parseUploadFields,
     UPLOAD_FIELD_NAMES,
     UPLOAD_RATE_GRACE_MS,
+    UploadAbortedError,
     uploadLimitsFromConfig
 } from "../../server/utils/backend/upload-request";
 import {makeConfig, makeStorageRoot, registerBackendTestHooks} from "./helpers";
@@ -239,6 +242,71 @@ describe("upload request bounds", () => {
 
         expect(parseUploadFields.bind(null, parsed)).toThrow(); // no email field was sent
         expect(Object.keys(parsed.files)).toEqual(["file"]);
+    });
+});
+
+/*
+ * A formidable error as the endpoints actually receive it: an Error carrying the library's internal
+ * numeric `code`. Built here rather than imported so the mapping is pinned to the real values.
+ */
+const formidableError = (message: string, code: number, httpCode = 500) =>
+    Object.assign(new Error(message), {code, httpCode});
+
+describe("upload request error classification", () => {
+    it("reports a malformed multipart body as a client error, not a server fault", () => {
+        const fault = classifyUploadRequestError(
+            formidableError("stream ended unexpectedly", formidableErrors.malformedMultipart, 400)
+        );
+
+        expect(fault?.statusCode).toBe(400);
+        expect(fault?.code).toBe("INVALID_UPLOAD");
+    });
+
+    it("reports an aborted upload as a client error even though formidable calls it a 500", () => {
+        // formidable constructs its `aborted` error with the default httpCode 500, so matching on
+        // httpCode would leave every cancelled or timed-out upload looking like a crash.
+        const aborted = formidableError("Request aborted", formidableErrors.aborted, 500);
+
+        expect(classifyUploadRequestError(aborted)?.statusCode).toBe(408);
+        expect(classifyUploadRequestError(aborted)?.code).toBe("UPLOAD_ABORTED");
+    });
+
+    it("maps each upload bound to a timeout and a vanished client to a bad request", () => {
+        for (const reason of ["idle-timeout", "time-limit", "rate-floor"] as const) {
+            const fault = classifyUploadRequestError(new UploadAbortedError(reason, reason));
+
+            expect(fault?.statusCode).toBe(408);
+            expect(fault?.code).toBe("UPLOAD_ABORTED");
+        }
+
+        const closed = classifyUploadRequestError(new UploadAbortedError("client-closed", "gone"));
+
+        expect(closed?.statusCode).toBe(400);
+        expect(closed?.code).toBe("UPLOAD_ABORTED");
+    });
+
+    it("still reports an oversized file as 413", () => {
+        expect(
+            classifyUploadRequestError(
+                formidableError(
+                    "options.maxFileSize exceeded",
+                    formidableErrors.biggerThanMaxFileSize,
+                    413
+                )
+            )?.statusCode
+        ).toBe(413);
+    });
+
+    it("leaves genuine server faults unmapped so they stay 500s", () => {
+        // The whole point of classifying by known code: a real server-side failure must not be
+        // laundered into a 4xx that hides a bug.
+        expect(
+            classifyUploadRequestError(
+                formidableError("cannot create dir", formidableErrors.cannotCreateDir, 500)
+            )
+        ).toBeNull();
+        expect(classifyUploadRequestError(new Error("database is locked"))).toBeNull();
+        expect(classifyUploadRequestError("not even an error")).toBeNull();
     });
 });
 
