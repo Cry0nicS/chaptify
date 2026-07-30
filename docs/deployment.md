@@ -51,8 +51,16 @@ it (`-f …` or `COMPOSE_FILE`), so the base file — and everything that depend
 Change the published port from `3000:3000` to `127.0.0.1:3000:3000`. The container's plain-HTTP port
 is then reachable only on the local loopback, never a public interface. Local Docker
 (`localhost:3000`) and the smoke test (`127.0.0.1:3000`) are unaffected; on the VPS it keeps the app
-off the internet so Caddy is the only public entrypoint. This is the single change to the committed
-base file.
+off the internet so Caddy is the only public entrypoint.
+
+The base file also contains the container containment every environment inherits, because the worker
+runs FFmpeg over fully untrusted uploaded media: `cap_drop: [ALL]`, `security_opt:
+[no-new-privileges:true]`, `read_only: true` with a small `/tmp` tmpfs, and a `pids_limit` per
+service. `cleanup` additionally gets `network_mode: none` — it only reads SQLite and unlinks expired
+files, so it needs no network stack at all. The storage volume at `/data/chaptify` is the only
+writable persistent path, and `/app` is root-owned so the runtime user cannot rewrite the
+application's own code. `npm run smoke:docker` exercises the whole pipeline under these
+restrictions, so a change that breaks them fails in CI rather than in production.
 
 ### R.2 Production overlay (`docker-compose.prod.yml`, new)
 
@@ -60,7 +68,16 @@ Adds one `caddy` service (`caddy:2-alpine`) that publishes 80/443, terminates TL
 Let's Encrypt certificate, and reverse-proxies to the app over the internal compose network as
 `chaptify:3000`. It inherits the base `chaptify` / `worker` / `cleanup` services and the
 `chaptify-storage` volume unchanged, and persists issued certs in a `caddy-data` volume. It reads
-`DOMAIN` from `.env` and fails fast if unset.
+`DOMAIN` from `.env` and fails fast if unset. The one base setting it drops is the worker's
+`host.docker.internal` alias (`extra_hosts: !reset []`), which exists only for the local smoke
+test's Mailgun mock. `!reset` is required because Compose *appends* to list fields, so
+`extra_hosts: []` would silently keep the inherited entry — this needs Compose 2.24 or newer.
+
+If the box also runs other services behind one shared Caddy, use `docker-compose.vps.yml` instead of
+this overlay (never both — this one publishes 80/443 and would collide with the central proxy). That
+file puts only the API on the external `edge` network, keeps the worker and cleanup off it, swaps the
+named volume for a `/srv/chaptify-data` bind mount, and applies CPU/memory caps sized for a shared
+4 vCPU / 8 GB box.
 
 ### R.3 Caddy config (`caddy/Caddyfile`, new)
 

@@ -109,6 +109,12 @@ jobs:
           echo "NUXT_DOWNLOAD_SIGNING_SECRET=ci-download-signing-secret-with-32-chars" >> .env
       - name: Validate docker compose
         run: docker compose config
+      # Both production overlays are validated here because neither is exercised by the smoke test
+      # below, and both rely on the `!reset` tag that older Compose versions ignore silently.
+      - name: Validate production overlays
+        run: |
+          DOMAIN=example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null
+          docker compose -f docker-compose.yml -f docker-compose.vps.yml config > /dev/null
       - name: Build Docker Compose stack
         run: docker compose build
       - name: Start Docker Compose stack

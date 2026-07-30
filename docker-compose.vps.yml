@@ -1,0 +1,65 @@
+# Shared-VPS overlay for Chaptify — for a box that also runs other services behind ONE central
+# Caddy (see the vps deployment plan). NOT auto-loaded; opt in explicitly:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d
+#
+# or set COMPOSE_FILE=docker-compose.yml:docker-compose.vps.yml in .env on that box.
+#
+# Use this INSTEAD of docker-compose.prod.yml, never both: that overlay ships Chaptify's own Caddy
+# and publishes 80/443, which would collide with the central proxy. Here Chaptify publishes no host
+# port at all and is reachable only as `chaptify:3000` on the external `edge` network the central
+# Caddy also joins.
+#
+# Requires Compose 2.24+ for the `!reset` tag, and the network to exist first:
+#
+#   docker network create edge
+services:
+    chaptify:
+        # The API is the ONLY container on the proxy network. Nothing else in this stack serves
+        # requests, and joining `edge` would expose the worker and cleanup to every other service on
+        # that network for no reason. Coordination between the three happens through SQLite on the
+        # shared storage volume, never over the network.
+        networks:
+            - edge
+        # No published host port: the central Caddy reaches the API over `edge`. `!reset` is
+        # required because list fields in an override are appended, not replaced — `ports: []` would
+        # leave the inherited loopback binding in place.
+        ports: !reset []
+        volumes: !override
+            # Dedicated host path rather than a named volume, so Chaptify's transient audio is
+            # isolated, attributable, and movable onto a separate disk later without touching any
+            # other service's data. Create it BEFORE the first `up` and give it to the image's
+            # appuser — `install -d -o 100 -g 101 -m 750 /srv/chaptify-data`. Docker would otherwise
+            # create the missing path as root:root and every write would fail with EACCES.
+            - /srv/chaptify-data:/data/chaptify
+        cpus: "1.0"
+        mem_limit: 512m
+
+    worker:
+        # The FFmpeg process handles fully untrusted uploaded media, so it stays off `edge`
+        # entirely. It keeps the stack's default bridge network because it still needs plain egress
+        # to the Mailgun API to send completion mail — it accepts no inbound connections.
+        extra_hosts: !reset []
+        volumes: !override
+            - /srv/chaptify-data:/data/chaptify
+        # Hard resource ceiling independent of NUXT_WORKER_CONCURRENCY: application-level
+        # concurrency assumes well-behaved input, while these caps hold even if a crafted file makes
+        # FFmpeg spin or allocate. Sized for a 4 vCPU / 8 GB box so one long transcode cannot starve
+        # the other services sharing it. `memswap_limit` equal to `mem_limit` denies this container
+        # swap entirely: audio transcoding needs a small fraction of 1.5 GB, so hitting the limit
+        # means something is wrong and should be OOM-killed rather than left thrashing the host's
+        # 2 GB swapfile, which every other service shares.
+        cpus: "2.0"
+        mem_limit: 1536m
+        memswap_limit: 1536m
+
+    cleanup:
+        # Inherits `network_mode: none` from the base file — it has no network stack at all.
+        volumes: !override
+            - /srv/chaptify-data:/data/chaptify
+        cpus: "0.5"
+        mem_limit: 256m
+
+networks:
+    edge:
+        external: true

@@ -48,11 +48,13 @@ COPY --from=builder /app/public ./public
 RUN mkdir -p .output/server/node_modules/better-sqlite3/build \
     && cp -R node_modules/better-sqlite3/build/Release .output/server/node_modules/better-sqlite3/build/
 
-# Use non-root user for security
+# Use non-root user for security. Only the storage path is handed to appuser: /app stays
+# root-owned and is not writable by the runtime user, so a compromised process cannot rewrite the
+# application's own code even if the container is started without a read-only root filesystem.
 RUN addgroup -S appgroup \
     && adduser -S appuser -G appgroup \
     && mkdir -p /data/chaptify \
-    && chown -R appuser:appgroup /data/chaptify /app
+    && chown -R appuser:appgroup /data/chaptify
 USER appuser
 
 EXPOSE 3000
