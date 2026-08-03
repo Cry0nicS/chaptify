@@ -13,6 +13,16 @@ env:
   IMAGE_NAME: ghcr.io/cry0nics/chaptify
 
 # The default token is read-only; the publish and prune jobs widen it themselves.
+#
+# Actions in any job holding a scope beyond `contents: read` are pinned to a full commit SHA with the
+# release in a trailing comment: a mutable tag like `@v7` is a pointer its owner can move, and those
+# jobs hold a token that can write to the registry. Read-only jobs stay on tags, where a moved tag
+# cannot reach anything worth having.
+#
+# The one exception is the Trivy action, pinned by SHA in the read-only `docker` job too. That gate has
+# to be the SAME scanner and the same bundled Trivy version as the publishing gate, or a green PR
+# would not actually predict a green publish. `uses:` takes no expressions, so the pin is repeated
+# literally; the three copies (here twice, once in image-rescan.yml) must be bumped together.
 permissions:
   contents: read
 
@@ -95,6 +105,10 @@ jobs:
   docker:
     name: Docker Compose smoke
     runs-on: ubuntu-latest
+    # Read-only. This job runs the same vulnerability gate as `publish` but holds no registry scope, so
+    # a pull request gets the gate's verdict without any job in the run being able to publish.
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -146,6 +160,22 @@ jobs:
           echo "Rendered overlays match their intent."
       - name: Build Docker Compose stack
         run: docker compose build
+      # The same gate `publish` applies, run here on every pull request against the image this job just
+      # built from the same Dockerfile and context. A green PR therefore means the image is publishable
+      # — the gate cannot first be discovered red after merge, when the only way forward is a follow-up
+      # commit on main. Same action pin, same flags, same `.trivyignore`, deliberately duplicated rather
+      # than shared, because `publish` must re-scan the exact bytes it pushes and this job's image is a
+      # different build of the same source.
+      - name: Vulnerability gate (Trivy, read-only preview of the publish gate)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: chaptify:latest
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
       - name: Start Docker Compose stack
         run: docker compose up -d
       - name: Smoke Docker Compose stack
@@ -172,17 +202,17 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Recommended rather than required by the action, and cheap.
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Resolve image tag
         id: tag
         # The immutable tag. On a push event `github.sha` is the commit that landed on main, so this
         # names exactly the tree that was built — the one thing `latest` alone can never tell you.
         run: echo "short-sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
       - name: Build image (local only, not pushed)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           # Into the runner's own daemon so the scanner can read it, and so the push below can move
@@ -197,7 +227,7 @@ jobs:
       # which teaches an operator to route around the gate. Unfixed findings are not ignored, just
       # not blocking — the weekly rescan workflow prints them in full.
       - name: Vulnerability gate (Trivy)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: chaptify:scan
@@ -207,7 +237,7 @@ jobs:
           exit-code: "1"
           trivyignores: .trivyignore
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -236,9 +266,14 @@ jobs:
           echo "Deploy it by setting CHAPTIFY_TAG=sha-${{ steps.tag.outputs.short-sha }} on the box." \
             >> "$GITHUB_STEP_SUMMARY"
 
-  # Private GHCR storage is quota-bounded and every build rewrites the application layers, so old
-  # versions are pruned rather than accumulated. Deliberately NOT a step inside `publish`: a registry
-  # hiccup here must not report a successful push as a failed one.
+  # Every build rewrites the application layers, so versions would otherwise accumulate forever. A GHCR
+  # package is private on first publish even from a public repository, and a private package's size
+  # counts against the owner's storage quota — so pruning pays for itself immediately. It stays worth
+  # having if the package is later made public and storage becomes free: the kept set is also the
+  # rollback menu, and ten entries is a list a person can read.
+  #
+  # Deliberately NOT a step inside `publish`: a registry hiccup here must not report a successful push
+  # as a failed one.
   prune-registry:
     name: Prune old GHCR versions
     needs: publish
@@ -255,15 +290,92 @@ jobs:
       #
       # An empty delete list is a no-op success, so this is safe on the first builds too.
       - name: Delete all but the ten newest versions
-        uses: actions/delete-package-versions@v5
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
         with:
           package-name: chaptify
           package-type: container
           min-versions-to-keep: 10
 
+  # The repository is public, so GitHub disables its scheduled workflows after 60 days with no
+  # repository activity — and documents no notification when it does. The weekly image rescan is the
+  # only thing watching the image that is already deployed, and a disabled workflow cannot report its
+  # own absence, so the check has to run from something that is still triggered. That is here: every
+  # push and pull request asks the API what state the rescan is in.
+  #
+  # This is not merely a nag. Sixty quiet days is a normal state for a finished side project, which is
+  # precisely when an unattended weekly scan matters most, and the same inactivity that trips the
+  # 60-day timer also means nobody is looking at the Actions tab. Any push both resets that timer and
+  # re-runs this check, so the first activity after a quiet spell surfaces the gap.
+  rescan-freshness:
+    name: Rescan workflow still armed
+    runs-on: ubuntu-latest
+    permissions:
+      # Read-only, and the narrowest scope that can read workflow state and run history.
+      actions: read
+    steps:
+      - name: Check the rescan workflow is enabled and running
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW: image-rescan.yml
+          # Warn once a scheduled weekly run has missed roughly two turns. Tight enough to notice a
+          # silently stopped schedule, loose enough that one delayed or dropped cron run — which
+          # GitHub explicitly allows under load — is not treated as breakage.
+          STALE_AFTER_DAYS: 21
+        run: |
+          set -euo pipefail
+
+          # The API answers for the repository, not for this ref, so it 404s while the workflow exists
+          # only on a feature branch — including the pull request that first adds it. That is a
+          # not-yet state, not a broken one, so it warns and passes rather than failing a PR for the
+          # absence of something the PR itself is adding.
+          if ! state=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW}" --jq '.state' 2>/dev/null); then
+            echo "::warning title=Rescan workflow not registered yet::${WORKFLOW} is not on the default branch yet; this check becomes meaningful once it is merged."
+            exit 0
+          fi
+          echo "State: ${state}"
+
+          if [ "$state" != "active" ]; then
+            {
+              echo "### Weekly image rescan is NOT running"
+              echo
+              echo "\`${WORKFLOW}\` is in state \`${state}\`, so the deployed image is no longer being"
+              echo "rescanned for new advisories. A public repository has its scheduled workflows"
+              echo "disabled after 60 days without repository activity."
+              echo
+              echo "Re-enable it with:"
+              echo
+              echo '```'
+              echo "gh workflow enable ${WORKFLOW}"
+              echo '```'
+              echo
+              echo "Then run it once to confirm: \`gh workflow run ${WORKFLOW}\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=Weekly image rescan disabled::${WORKFLOW} is ${state}. Re-enable with: gh workflow enable ${WORKFLOW}"
+            exit 1
+          fi
+
+          # Active is not the same as actually running — a schedule can also be silently starved.
+          last=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW}/runs?per_page=1" \
+            --jq '.workflow_runs[0].created_at // empty')
+          if [ -z "$last" ]; then
+            echo "::warning title=Weekly image rescan has never run::Trigger one with: gh workflow run ${WORKFLOW}"
+            echo "Rescan workflow is active but has no runs yet." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          age_days=$(( ( $(date -u +%s) - $(date -u -d "$last" +%s) ) / 86400 ))
+          echo "Last run: ${last} (${age_days} days ago)"
+          if [ "$age_days" -gt "$STALE_AFTER_DAYS" ]; then
+            echo "::warning title=Weekly image rescan looks stale::Last run was ${age_days} days ago (${last}). Check the schedule, or run: gh workflow run ${WORKFLOW}"
+            echo "Rescan workflow is active but last ran ${age_days} days ago (${last})." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Rescan workflow is armed; last run ${age_days} days ago."
+          fi
+
   # Single stable check to point branch protection at: green only when every job above passed.
-  # `prune-registry` is left out deliberately — housekeeping must not gate a merge. It still turns the
-  # run red and emails on failure, because any failed job fails the run.
+  # `prune-registry` and `rescan-freshness` are left out deliberately — housekeeping and monitoring must
+  # not gate a merge, least of all an urgent security fix. Both still turn the run red and email on
+  # failure, because any failed job fails the run.
   ci-complete:
     name: CI complete
     if: always()
