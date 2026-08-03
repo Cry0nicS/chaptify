@@ -202,9 +202,12 @@ const fileBeginBarrier = () => {
 };
 
 /*
- * Starts the file part and waits for formidable to open it. One body byte is pushed as well as the
- * headers, because formidable reports `fileBegin` when it starts writing the file, not when it has
- * merely seen the part header. Returns the partial file's path.
+ * Starts the file part and waits for `fileBegin`. The parsed part header alone triggers the event —
+ * formidable emits it immediately before `file.open()`, so the file may not exist on disk yet when
+ * the barrier resolves. The single body byte is pushed for a different, measured reason: it lets
+ * formidable start its first file write before a test pushes its bulk payload, and without it the
+ * steady-upload drain overran pumpUntilConsumed's step budget under CPU saturation (6 failures
+ * across 38 loaded runs; zero with the byte). Returns the partial file's path.
  */
 const startFileAndAwaitWatchdog = async (request: Readable, begun: Promise<string>) => {
     request.push(FILE_PART_HEADER);
@@ -242,6 +245,11 @@ const pumpUntilConsumed = async (request: Readable) => {
         }
 
         await vi.advanceTimersByTimeAsync(PUMP_STEP_MS);
+    }
+
+    // The last advancement can be the one that drains the buffer, so check once more before failing.
+    if (request.readableLength === 0) {
+        return;
     }
 
     throw new Error(
