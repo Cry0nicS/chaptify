@@ -1,0 +1,38 @@
+# Trivy vulnerability-gate allowlist for the Chaptify image.
+#
+# Two workflows pass this file to Trivy with `--ignorefile`, so an entry here suppresses a finding in
+# BOTH of them:
+#
+#   - .github/workflows/ci.yml           the per-build gate; a finding blocks the push to GHCR
+#   - .github/workflows/image-rescan.yml the weekly rescan of the published `latest` tag
+#
+# The gate only counts CRITICAL/HIGH findings that already have a fix available (`--ignore-unfixed`),
+# so every failure it produces has a concrete remedy: bump the base image, the apk package, or the
+# npm dependency, then rebuild. Reach for an entry below only when shipping with a known-fixable
+# finding is genuinely the right call — not to quiet a build.
+#
+# CONVENTION — every entry MUST carry both of these. No exceptions.
+#
+#   1. A `#` comment directly above it stating why the finding does not apply or cannot be fixed yet,
+#      with a link to the advisory.
+#   2. An `exp:YYYY-MM-DD` expiry no more than 90 days out.
+#
+# The expiry IS the review cadence. Once the date passes Trivy counts the finding again and the next
+# build fails, forcing a fresh decision — extend with a new reason, or fix it. There is no calendar
+# reminder and no standing review; the mechanism does the remembering. An entry without an expiry is
+# a permanent silent hole, which is the one thing this file must never contain.
+#
+# A committed entry here is also the *only* sanctioned way past a red gate, and it is deliberately
+# not a side channel: the reason and the decision date are both in git history. Editing the workflow
+# to weaken the scan, or building and pushing the image from a laptop around CI, are silent bypasses
+# and are banned.
+#
+# Format reference: https://trivy.dev/latest/docs/configuration/filtering/
+#
+# Shape of a well-formed entry (illustrative — do not uncomment):
+#
+#   # Reachable only through a CLI subcommand the image never invokes; Alpine ships the fix in 3.24.
+#   # https://avd.aquasec.com/nvd/cve-2019-14697
+#   CVE-2019-14697 exp:2026-11-01
+#
+# There are no entries, and that is the intended steady state.

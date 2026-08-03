@@ -79,6 +79,21 @@ file puts the API alone with the proxy on a dedicated external `chaptify-proxy` 
 worker and cleanup off every shared network, swaps the named volume for a `/srv/chaptify-data` bind
 mount, and applies CPU/memory caps sized for a shared 4 vCPU / 8 GB box.
 
+That overlay also **pulls the image instead of building it**, which is the one place it departs from
+every other path in this runbook. All three services take
+`ghcr.io/cry0nics/chaptify:${CHAPTIFY_TAG}` and the base file's `build:` is dropped
+(`build: !reset null`), so a shared box needs no source tree, no Node toolchain, no build cache
+against its disk budget, and no build CPU competing with live transcodes. The image is published by
+this repo's CI on every push to main under an immutable `sha-<shortsha>` tag and a moving `latest`,
+and only after a Trivy scan of the freshly built image passes — a CRITICAL or HIGH finding that has a
+fix available fails the job before anything reaches the registry, so an ungated image cannot be
+pulled. Exceptions live in `.trivyignore`, every entry time-boxed with `exp:` and a reason; a weekly
+`image-rescan.yml` run re-applies the same filters to the published `latest` and emails on a red run.
+`CHAPTIFY_TAG` goes in `.env` next to the overlay (never `latest`, so no `pull` can silently move
+production onto a different build); deploying is bumping it, `docker compose pull`, `up -d`, and
+rollback is setting it to an earlier sha. CI keeps the ten most recent versions, which bounds the
+rollback window.
+
 > **Why a dedicated network and not the shared one.** `NUXT_TRUST_PROXY=true` trusts the right-most
 > `X-Forwarded-For` hop from whoever connects, so it is only sound while a header-overwriting proxy is
 > the *only* thing that can connect. Removing the published host port does not achieve that on a

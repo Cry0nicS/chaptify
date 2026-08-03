@@ -8,6 +8,13 @@ on:
 
 env:
   NODE_VERSION: 24
+  # The single image all three services run. Lowercase because registry paths are case-sensitive and
+  # GHCR rejects the repo owner's mixed-case spelling.
+  IMAGE_NAME: ghcr.io/cry0nics/chaptify
+
+# The default token is read-only; the publish and prune jobs widen it themselves.
+permissions:
+  contents: read
 
 # Cancel superseded runs on the same branch/PR so a new push doesn't queue behind stale jobs.
 concurrency:
@@ -118,12 +125,24 @@ jobs:
         run: |
           set -euo pipefail
           prod=$(DOMAIN=example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml config)
-          vps=$(docker compose -f docker-compose.yml -f docker-compose.vps.yml config)
+          # CHAPTIFY_TAG is required by the vps overlay, so rendering it also asserts that the `:?`
+          # guard is wired up: an unset tag must be a hard interpolation error, never an empty tag.
+          vps=$(CHAPTIFY_TAG=sha-0000000 docker compose -f docker-compose.yml -f docker-compose.vps.yml config)
+          if CHAPTIFY_TAG= docker compose -f docker-compose.yml -f docker-compose.vps.yml config >/dev/null 2>&1; then
+            echo "vps overlay renders without CHAPTIFY_TAG — the required-variable guard is gone"; exit 1
+          fi
           echo "$prod" | grep -q 'host.docker.internal' && { echo "prod overlay still has the host-gateway alias"; exit 1; }
           echo "$vps" | grep -q 'host.docker.internal' && { echo "vps overlay still has the host-gateway alias"; exit 1; }
           echo "$vps" | grep -q 'published' && { echo "vps overlay still publishes a host port"; exit 1; }
           echo "$vps" | grep -q 'chaptify-proxy' || { echo "vps overlay lost the dedicated proxy network"; exit 1; }
           echo "$vps" | grep -q 'edge' && { echo "vps overlay must not put the API on the shared edge network"; exit 1; }
+          # The box pulls a pinned registry tag and has no source tree, so a surviving `build:` would
+          # turn a failed pull into a confusing build attempt, and a surviving local `chaptify:latest`
+          # would mean it pulls nothing at all.
+          test "$(echo "$vps" | grep -c "image: ${IMAGE_NAME}:sha-0000000")" = 3 \
+            || { echo "vps overlay does not pin the pinned GHCR tag on all three services"; exit 1; }
+          echo "$vps" | grep -qE '^\s+build:' && { echo "vps overlay still builds the image on the box"; exit 1; }
+          echo "$vps" | grep -q 'image: chaptify:latest' && { echo "vps overlay still uses the local dev image"; exit 1; }
           echo "Rendered overlays match their intent."
       - name: Build Docker Compose stack
         run: docker compose build
@@ -135,11 +154,120 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  # Build the image once, gate it on a vulnerability scan, and only then push it to GHCR. The VPS
+  # never builds and never clones this repo — it pulls a tag this job produced (see
+  # docker-compose.vps.yml), so this job is the sole path from source to a runnable image.
+  publish:
+    name: Publish image
+    # Only what has actually landed on main gets published. Pull requests still build and smoke the
+    # image in the `docker` job above, they just produce no tag — so every tag in the registry
+    # corresponds to a commit on main, which is what makes `sha-<shortsha>` a usable rollback target.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [lint, typecheck, test, build, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Lets the built-in GITHUB_TOKEN push to ghcr.io. The repository that publishes a package is
+      # automatically granted admin on it, which is also what the prune job below relies on.
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      # Recommended rather than required by the action, and cheap.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Resolve image tag
+        id: tag
+        # The immutable tag. On a push event `github.sha` is the commit that landed on main, so this
+        # names exactly the tree that was built — the one thing `latest` alone can never tell you.
+        run: echo "short-sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Build image (local only, not pushed)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          # Into the runner's own daemon so the scanner can read it, and so the push below can move
+          # those same bytes rather than rebuilding them. Single-platform only, which is fine: the box
+          # is x86 and cross-building was rejected.
+          load: true
+          push: false
+          tags: chaptify:scan
+      # The gate. Scoped to CRITICAL/HIGH findings that already have a fix published, so every
+      # failure here has an action attached: bump the base image, apk package, or npm dependency and
+      # rebuild. A blanket "no highs" would eventually block on findings with no available remedy,
+      # which teaches an operator to route around the gate. Unfixed findings are not ignored, just
+      # not blocking — the weekly rescan workflow prints them in full.
+      - name: Vulnerability gate (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: chaptify:scan
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Reached only when the gate passed, so a vulnerable image is never published under any tag and
+      # the box has no ungated image to pull.
+      #
+      # Retagging and pushing the image already in the daemon, rather than a second
+      # build-push-action with `push: true`, is deliberate. The upstream test-before-push pattern
+      # re-runs the build and relies on it being a cache hit; that is near-certain but not
+      # guaranteed, and any cache miss would publish bytes the scanner never saw. Pushing the loaded
+      # image makes "what was scanned is what was published" true by construction. It is only
+      # available because the image is single-platform — a multi-platform build could not be loaded
+      # into the daemon in the first place.
+      - name: Push image
+        env:
+          SHA_TAG: ${{ env.IMAGE_NAME }}:sha-${{ steps.tag.outputs.short-sha }}
+          LATEST_TAG: ${{ env.IMAGE_NAME }}:latest
+        run: |
+          set -euo pipefail
+          docker tag chaptify:scan "$SHA_TAG"
+          docker tag chaptify:scan "$LATEST_TAG"
+          docker push "$SHA_TAG"
+          docker push "$LATEST_TAG"
+          echo "Published $SHA_TAG (also tagged latest)."
+          echo "Deploy it by setting CHAPTIFY_TAG=sha-${{ steps.tag.outputs.short-sha }} on the box." \
+            >> "$GITHUB_STEP_SUMMARY"
+
+  # Private GHCR storage is quota-bounded and every build rewrites the application layers, so old
+  # versions are pruned rather than accumulated. Deliberately NOT a step inside `publish`: a registry
+  # hiccup here must not report a successful push as a failed one.
+  prune-registry:
+    name: Prune old GHCR versions
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      # Keeps the ten most recent versions. A GHCR version is a manifest digest, not a tag, and
+      # `docker push` of a single-platform image writes exactly one manifest with no attestation
+      # sidecars — so one build is one version carrying both its `sha-` tag and `latest`. Ten
+      # versions is therefore ten builds of main, and `latest` always rides the newest of them and can
+      # never be pruned out from under the registry. Ten is also the rollback window: `CHAPTIFY_TAG`
+      # can be set back to any of these, no further.
+      #
+      # An empty delete list is a no-op success, so this is safe on the first builds too.
+      - name: Delete all but the ten newest versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: chaptify
+          package-type: container
+          min-versions-to-keep: 10
+
   # Single stable check to point branch protection at: green only when every job above passed.
+  # `prune-registry` is left out deliberately — housekeeping must not gate a merge. It still turns the
+  # run red and emails on failure, because any failed job fails the run.
   ci-complete:
     name: CI complete
     if: always()
-    needs: [lint, typecheck, test, build, docker]
+    needs: [lint, typecheck, test, build, docker, publish]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs succeeded

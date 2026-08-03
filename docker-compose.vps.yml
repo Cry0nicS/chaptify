@@ -15,8 +15,31 @@
 # network to exist first:
 #
 #   docker network create chaptify-proxy
+#
+# THE IMAGE COMES FROM A REGISTRY, PINNED BY SHA
+#
+# All three services run one image, published by this repo's CI on every push to main under two tags:
+# an immutable `sha-<shortsha>` and a moving `latest`. This overlay pins the sha tag through
+# `CHAPTIFY_TAG` and drops the base file's `build:`, so the box never builds and never needs the
+# source: no Node toolchain on it, no build cache against its disk budget, and no build CPU competing
+# with live transcodes on shared vCPUs. `latest` is deliberately never referenced here — an accidental
+# `docker compose pull` must not be able to silently move production onto a different build.
+#
+# `CHAPTIFY_TAG` lives in `.env` next to this file, and it is the whole deploy and rollback mechanism:
+# which build is running is readable from that one line, and rolling back is setting it to an earlier
+# sha and running `pull` + `up -d`. CI keeps the ten most recent versions, so that is how far back a
+# rollback can reach. The `:?` guard makes an unset tag a loud interpolation error rather than a pull
+# of an empty tag.
+#
+#   CHAPTIFY_TAG=sha-1a2b3c4    # in .env, matching a green CI run
 services:
     chaptify:
+        image: ghcr.io/cry0nics/chaptify:${CHAPTIFY_TAG:?set CHAPTIFY_TAG in .env to the sha- tag to run}
+        # The base file's `build: .` is a local-dev convenience and must not survive here: with it
+        # present, a `docker compose up -d` that cannot find the image would try to BUILD it on the
+        # box and fail confusingly on the absent source tree, instead of reporting the pull problem
+        # it actually has.
+        build: !reset null
         # A DEDICATED two-member network (this API + the central Caddy), deliberately NOT the shared
         # `edge` network the other services use.
         #
@@ -45,6 +68,7 @@ services:
         mem_limit: 512m
 
     worker:
+        image: ghcr.io/cry0nics/chaptify:${CHAPTIFY_TAG:?set CHAPTIFY_TAG in .env to the sha- tag to run}
         # The FFmpeg process handles fully untrusted uploaded media, so it joins neither the proxy
         # network nor the shared `edge` one. It keeps the stack's own default bridge because it still
         # needs plain egress to the Mailgun API to send completion mail — it accepts no inbound
@@ -64,6 +88,7 @@ services:
         memswap_limit: 1536m
 
     cleanup:
+        image: ghcr.io/cry0nics/chaptify:${CHAPTIFY_TAG:?set CHAPTIFY_TAG in .env to the sha- tag to run}
         # Inherits `network_mode: none` from the base file — it has no network stack at all.
         volumes: !override
             - /srv/chaptify-data:/data/chaptify
