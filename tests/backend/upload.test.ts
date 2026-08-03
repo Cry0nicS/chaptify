@@ -174,6 +174,81 @@ const trickle = async (request: Readable, chunk: Buffer, seconds: number) => {
     }
 };
 
+/*
+ * A readiness barrier for the fake-timer tests below, and the reason they are not flaky.
+ *
+ * `parseMultipartUpload` awaits `mkdir` before it enters its promise executor, and the executor is
+ * where `startedAtMs` is captured and the watchdog `setInterval` is created. `advanceTimersByTimeAsync`
+ * flushes microtasks but does not wait for filesystem I/O, so a test that advances fake time straight
+ * after calling it can run its whole trickle loop while that `mkdir` is still pending. The watchdog
+ * then installs after the last advancement, reads an already-advanced fake clock as its start time,
+ * and never fires — because nothing moves time again. The upload rejection stays pending and the test
+ * times out. This was an intermittent CI failure, not a hypothetical.
+ *
+ * Raising the Vitest timeout does not help: the interval needs fake time to be *advanced*, not more
+ * real time to be waited. The fix has to be ordering.
+ *
+ * `fileBegin` is the earliest event that proves the watchdog is live: formidable can only report it
+ * from inside `form.parse`, which the executor calls after creating the interval. So awaiting it means
+ * `mkdir` has resolved, `startedAtMs` is pinned to fake-time zero, and the interval is running.
+ */
+const fileBeginBarrier = () => {
+    let began: (path: string) => void = () => {};
+    const begun = new Promise<string>((resolve) => {
+        began = resolve;
+    });
+
+    return {begun, onFileBegin: (path: string) => began(path)};
+};
+
+/*
+ * Starts the file part and waits for formidable to open it. One body byte is pushed as well as the
+ * headers, because formidable reports `fileBegin` when it starts writing the file, not when it has
+ * merely seen the part header. Returns the partial file's path.
+ */
+const startFileAndAwaitWatchdog = async (request: Readable, begun: Promise<string>) => {
+    request.push(FILE_PART_HEADER);
+    request.push(Buffer.from("x"));
+
+    return await begun;
+};
+
+/*
+ * Drains everything already pushed into the request and confirms formidable has taken it, before the
+ * caller lets fake time run on.
+ *
+ * Two things make this necessary. The watchdog compares a byte counter fed by formidable's `progress`
+ * event against the fake clock, and advancing fake time does not wait for the work that feeds that
+ * counter — so on a loaded machine the clock can cross the rate-floor grace period while only the part
+ * header has been counted, and a healthy upload is aborted for a throughput problem the test never
+ * simulated. But the stream also cannot drain without the clock moving at all: Node pumps reads through
+ * `setImmediate`, which the fake timers replace, so time has to advance *a little* for any byte to move.
+ *
+ * Hence small steps that stay inside the grace window — the floor is only evaluated once elapsed
+ * reaches UPLOAD_RATE_GRACE_MS, so pumping below that cannot trip it.
+ *
+ * `readableLength` is the observable, not the file on disk: formidable reports the file's intended path
+ * at `fileBegin` but creates it lazily, so its size is not a reliable proxy. Bytes leaving the request's
+ * buffer means formidable has received them, and it counts them as it receives them.
+ */
+const PUMP_STEP_MS = 100;
+
+const pumpUntilConsumed = async (request: Readable) => {
+    const maxSteps = Math.floor(UPLOAD_RATE_GRACE_MS / PUMP_STEP_MS) - 10;
+
+    for (let step = 0; step < maxSteps; step += 1) {
+        if (request.readableLength === 0) {
+            return;
+        }
+
+        await vi.advanceTimersByTimeAsync(PUMP_STEP_MS);
+    }
+
+    throw new Error(
+        `request still held ${request.readableLength} unconsumed bytes inside the grace window`
+    );
+};
+
 describe("upload request bounds", () => {
     afterEach(() => {
         vi.useRealTimers();
@@ -184,15 +259,19 @@ describe("upload request bounds", () => {
         const storageRoot = await makeStorageRoot();
         const {event, request} = makeStreamingEvent();
         const partialPaths: string[] = [];
+        const {begun, onFileBegin} = fileBeginBarrier();
         const parsing = parseMultipartUpload(
             event,
             storageRoot,
             {...NO_LIMITS, minBytesPerSecond: 1024},
-            (path) => partialPaths.push(path)
+            (path) => {
+                partialPaths.push(path);
+                onFileBegin(path);
+            }
         );
         const rejection = expect(parsing).rejects.toThrow(/transfer rate/);
 
-        request.push(FILE_PART_HEADER);
+        await startFileAndAwaitWatchdog(request, begun);
         // One byte per second keeps an idle timer alive forever but is far below 1 KiB/s.
         await trickle(request, Buffer.from("x"), UPLOAD_RATE_GRACE_MS / 1_000 + 5);
 
@@ -206,15 +285,16 @@ describe("upload request bounds", () => {
         vi.useFakeTimers();
         const storageRoot = await makeStorageRoot();
         const {event, request} = makeStreamingEvent();
+        const {begun, onFileBegin} = fileBeginBarrier();
         const parsing = parseMultipartUpload(
             event,
             storageRoot,
             {...NO_LIMITS, maxDurationMs: 10_000},
-            () => {}
+            onFileBegin
         );
         const rejection = expect(parsing).rejects.toThrow(/total time limit/);
 
-        request.push(FILE_PART_HEADER);
+        await startFileAndAwaitWatchdog(request, begun);
         // Fast enough to satisfy any throughput floor; the hard ceiling still applies.
         await trickle(request, Buffer.alloc(64 * 1024, "x"), 15);
 
@@ -225,15 +305,39 @@ describe("upload request bounds", () => {
         vi.useFakeTimers();
         const storageRoot = await makeStorageRoot();
         const {event, request} = makeStreamingEvent();
+        const {begun, onFileBegin} = fileBeginBarrier();
         const parsing = parseMultipartUpload(
             event,
             storageRoot,
             {...NO_LIMITS, maxDurationMs: 120_000, minBytesPerSecond: 1024},
-            () => {}
+            onFileBegin
         );
 
-        request.push(FILE_PART_HEADER);
-        await trickle(request, Buffer.alloc(8 * 1024, "x"), UPLOAD_RATE_GRACE_MS / 1_000 + 5);
+        // Barriered like the two rejection tests above. Before this, the watchdog installed after the
+        // last advancement and the rate floor was never evaluated at all — the test passed while
+        // verifying nothing about the bounds it exists to check.
+        await startFileAndAwaitWatchdog(request, begun);
+
+        /*
+         * This test asserts a negative — that neither bound fires — which is the one assertion that
+         * depends on the byte counter keeping pace with the clock. So the whole payload is pushed and
+         * provably consumed before fake time crosses the grace period, rather than being interleaved
+         * with it: 8 KiB/s is eight times the 1 KiB/s floor, but only if the bytes are actually on the
+         * books when the floor is first evaluated.
+         */
+        const seconds = UPLOAD_RATE_GRACE_MS / 1_000 + 5;
+        const chunk = Buffer.alloc(8 * 1024, "x");
+
+        for (let second = 0; second < seconds; second += 1) {
+            request.push(chunk);
+        }
+
+        await pumpUntilConsumed(request);
+
+        // Now time can cross the grace period safely: throughput is already well above the floor, and
+        // the elapsed total stays under the 120s ceiling.
+        await vi.advanceTimersByTimeAsync(UPLOAD_RATE_GRACE_MS + 5_000);
+
         request.push(Buffer.from(`\r\n--${BOUNDARY}--\r\n`));
         request.complete = true;
         request.push(null);
