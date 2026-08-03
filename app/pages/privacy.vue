@@ -70,6 +70,15 @@ const lastUpdated = "21 July 2026";
                             Your uploaded audio and its download link are deleted after 12 hours.
                         </span>
                     </li>
+                    <li class="flex gap-3">
+                        <UIcon
+                            name="i-lucide-mail-x"
+                            class="text-primary mt-0.5 size-4 shrink-0" />
+                        <span>
+                            Your email address is deleted as soon as we have sent you the download
+                            link. We keep only non-identifying service statistics.
+                        </span>
+                    </li>
                 </ul>
             </section>
 
@@ -126,11 +135,17 @@ const lastUpdated = "21 July 2026";
                         the "Delete now" button.
                     </p>
                     <p>
+                        <span class="text-highlighted">Your email.</span>
+                        We use it only to send you the download link, and delete it as soon as that
+                        email has been sent — or when the download link expires, if we could not
+                        deliver it.
+                    </p>
+                    <p>
                         <span class="text-highlighted">Upload record.</span>
-                        To run and improve Chaptify, we keep a short record of each upload — the
-                        email you provided and the book title from the filename, plus technical
-                        details like file size and duration. We use it only to operate the service;
-                        we never use it for marketing and never sell it.
+                        To run and improve Chaptify, we keep only non-identifying service statistics
+                        about each upload — the book title from the filename, plus technical details
+                        like file size and duration. We use them only to operate the service; we
+                        never use them for marketing and never sell them.
                     </p>
                 </div>
             </section>

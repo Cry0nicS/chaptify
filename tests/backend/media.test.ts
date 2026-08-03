@@ -153,7 +153,11 @@ describe("synthetic ffmpeg end-to-end media", () => {
             expect(history?.chapterCount).toBe(2);
             expect(history?.durationSeconds).toBeGreaterThan(3);
             expect(history?.status).toBe("ready");
-            expect(history?.email).toBe("reader@example.test");
+            // `processJob` delivers the completion email, which scrubs the operational address — and
+            // the history row follows it in the same sweep. Asserted as a pair so the invariant, not
+            // just the value, is what this test pins down.
+            expect(ready?.email).toBeNull();
+            expect(history?.email).toBeNull();
 
             const signed = createSignedDownloadToken({
                 publicJobId: ready.publicJobId,
@@ -188,7 +192,13 @@ describe("synthetic ffmpeg end-to-end media", () => {
                 .listUploadHistory()
                 .find((entry) => entry.publicJobId === `${inputFormat}-public-job-id`);
             expect(expiredHistory?.status).toBe("expired");
-            expect(expiredHistory?.email).toBe("reader@example.test");
+            // Expiry scrubs the operational address, so the history row is addressless too — the
+            // whole point of the feature, asserted here against a real ffmpeg run and a real cleanup
+            // pass rather than a stubbed transition.
+            expect(expiredHistory?.email).toBeNull();
+            // The usage history itself survives expiry intact.
+            expect(expiredHistory?.bookTitle).toBe("Synthetic");
+            expect(expiredHistory?.chapterCount).toBe(2);
         }
     );
 });

@@ -70,7 +70,6 @@ export const createMailgunService = (config: BackendConfig) => {
                 throw new Error("Mailgun is not configured");
             }
 
-            const bcc = config.mailgunBcc || undefined;
             const text = [
                 "Your audiobook is ready.",
                 "",
@@ -93,7 +92,6 @@ export const createMailgunService = (config: BackendConfig) => {
                     client.messages.create(config.mailgunDomain, {
                         from: config.mailgunSender,
                         to: input.to,
-                        ...(bcc ? {bcc} : {}),
                         subject: "Your Chaptify audiobook is ready",
                         text,
                         html

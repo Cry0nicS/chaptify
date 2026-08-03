@@ -14,6 +14,43 @@ const ensureColumn = (database: Database.Database, table: string, column: string
     }
 };
 
+/**
+ * Drops the `NOT NULL` from `upload_history.email` on databases created before the address became
+ * scrubbable. The `CREATE TABLE` above already declares it nullable, so this only fires for an
+ * existing file — but it has to exist, because SQLite cannot relax a constraint in place and
+ * `ensureColumn` only ever adds columns. Without it, a pre-existing database would keep `NOT NULL` and
+ * every scrub would throw while a fresh one worked, which is the kind of divergence that shows up in
+ * production and nowhere else.
+ *
+ * Four `ALTER`s rather than the usual `CREATE`+`INSERT SELECT` rebuild: this schema declares no
+ * foreign keys, triggers or views, so none of the twelve-step procedure's protections are needed, and
+ * naming only the column that changes means a future column cannot be silently dropped by an
+ * out-of-date copy list. Wrapped in a transaction so a failure cannot leave the scratch column behind.
+ *
+ * Side effect worth knowing: `DROP`+`RENAME` moves `email` to the end of the column order, so a
+ * migrated database lists columns differently from a fresh one. Nothing reads by ordinal position —
+ * inserts name their columns and `rowToUploadHistory` reads by key — so this is cosmetic.
+ */
+const ensureNullableUploadHistoryEmail = (database: Database.Database) => {
+    const email = (
+        database.prepare("PRAGMA table_info(upload_history)").all() as Array<{
+            name: string;
+            notnull: number;
+        }>
+    ).find((entry) => entry.name === "email");
+
+    if (!email || email.notnull === 0) {
+        return;
+    }
+
+    database.transaction(() => {
+        database.exec("ALTER TABLE upload_history ADD COLUMN email_nullable TEXT");
+        database.exec("UPDATE upload_history SET email_nullable = email");
+        database.exec("ALTER TABLE upload_history DROP COLUMN email");
+        database.exec("ALTER TABLE upload_history RENAME COLUMN email_nullable TO email");
+    })();
+};
+
 export const openDatabase = (storageRoot: string): Database.Database => {
     if (sharedDatabase) {
         return sharedDatabase;
@@ -95,7 +132,10 @@ export const openDatabase = (storageRoot: string): Database.Database => {
             file_size_bytes INTEGER NOT NULL,
             source_format TEXT NOT NULL,
             output_format TEXT NOT NULL,
-            email TEXT NOT NULL,
+            -- Nullable on purpose: the address is scrubbed to NULL as soon as it stops being needed
+            -- for delivery, leaving the rest of the row as non-identifying usage history. NULL is the
+            -- discriminator for "this row's address is gone" — see ensureNullableUploadHistoryEmail.
+            email TEXT,
             status TEXT NOT NULL,
             email_status TEXT NOT NULL,
             error_code TEXT,
@@ -121,6 +161,7 @@ export const openDatabase = (storageRoot: string): Database.Database => {
         "split_without_chapters INTEGER NOT NULL DEFAULT 0"
     );
     ensureColumn(database, "upload_history", "segmented", "segmented INTEGER");
+    ensureNullableUploadHistoryEmail(database);
     database
         .prepare("INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)")
         .run(1, new Date().toISOString());

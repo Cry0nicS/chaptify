@@ -53,7 +53,6 @@ services:
             NUXT_MAILGUN_DOMAIN: ${NUXT_MAILGUN_DOMAIN:-}
             NUXT_MAILGUN_KEY: ${NUXT_MAILGUN_KEY:-}
             NUXT_MAILGUN_SENDER: ${NUXT_MAILGUN_SENDER:-}
-            NUXT_MAILGUN_BCC: ${NUXT_MAILGUN_BCC:-}
         volumes:
             - chaptify-storage:/data/chaptify
         # This is the container that runs FFmpeg over fully untrusted media, so it gets the same

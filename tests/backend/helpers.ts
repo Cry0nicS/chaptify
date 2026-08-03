@@ -70,7 +70,6 @@ export const makeConfig = (storageRoot: string): BackendConfig => ({
     mailgunDomain: "example.test",
     mailgunKey: "key-test",
     mailgunSender: "sender@example.test",
-    mailgunBcc: "",
     contactRecipient: "operator@example.test",
     contactRateLimit: 5
 });

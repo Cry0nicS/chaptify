@@ -85,17 +85,42 @@ because they point to the same logical signed download URL for the same ready jo
 
 Every upload also inserts one permanent row into the `upload_history` SQLite table for
 operator-facing analysis (there is no public endpoint for it). Each row records the book name
-inferred from the uploaded filename, file size, source/output formats, the recipient email, the
-current processing and email statuses, the public error code for failures, and upload/completion
-timestamps. After the worker probes the file, the row is enriched with the total duration, the
+inferred from the uploaded filename, file size, source/output formats, the recipient email (until it is
+scrubbed — see below), the current processing and email statuses, the public error code for failures,
+and upload/completion timestamps. After the worker probes the file, the row is enriched with the total duration, the
 embedded chapter count, and the author/title tags when present; anything unavailable stays `NULL`
 so history can be filtered and sorted.
 
-Unlike the `jobs` table — which anonymizes emails and filenames as part of cleanup — upload
-history is intentionally never cleaned up or anonymized. It permanently retains uploader email
-addresses and book names, which is a deliberate retention/privacy trade-off; deleting rows by hand
-(or adding a retention job later) is the operator's call. History writes are best-effort
-bookkeeping: a failed history write logs a warning and never fails an upload or a job transition.
+The row is permanent; the address in it is not. `upload_history.email` is scrubbed to `NULL` as soon as
+the corresponding `jobs.email` is scrubbed — which for a successful delivery is within seconds of the
+completion email being sent, not at link expiry, because the link is already in the recipient's inbox.
+The invariant is:
+
+> a history row holds an address only while its job row still does.
+
+It is enforced by one idempotent statement inside the history sync, not wired into each of the five
+places that null `jobs.email`, so a future transition inherits the behaviour instead of having to
+remember it. It is also self-backfilling: rows written before this existed are scrubbed by the first
+sync after deployment, so no separate migration is needed. Testable directly —
+
+```sql
+-- must return zero rows
+SELECT h.public_job_id FROM upload_history h
+JOIN jobs j ON j.public_job_id = h.public_job_id
+WHERE j.email IS NULL AND h.email IS NOT NULL;
+```
+
+What survives indefinitely is the non-identifying remainder: book name, timestamps, file size,
+formats, status, and probed metadata. This reverses the table's original design, which retained the
+address forever. Replacing the address with an irreversible per-uploader hash was considered and
+rejected: a keyed hash whose secret the operator still holds is *pseudonymous*, not anonymous, so it
+would have preserved the liability the change exists to remove. The accepted cost is that
+unique-uploader and repeat-uploader counts are not answerable after delivery.
+
+`email TEXT` is nullable in the schema, and `ensureNullableUploadHistoryEmail` relaxes the old
+`NOT NULL` on databases created earlier — SQLite cannot alter a constraint in place, and `ensureColumn`
+only adds columns. History writes are best-effort bookkeeping: a failed history write logs a warning
+and never fails an upload or a job transition.
 
 ## Processing
 
@@ -238,7 +263,10 @@ Operational defaults:
 - `NUXT_EMAIL_RETRY_MAX_DELAY_SECONDS=3600`
 - `NUXT_CONTACT_RATE_LIMIT=5`
 
-`NUXT_MAILGUN_BCC` is optional. Completion emails are sent to the email submitted with the upload.
+Completion emails are sent only to the address submitted with the upload. There is deliberately no
+BCC or operator-copy option: a copy of every completion email would put a plaintext recipient address
+in a mailbox indefinitely, which would contradict the privacy claim that the address is deleted once
+delivery is done.
 
 `NUXT_CONTACT_RECIPIENT` is the operator inbox that receives contact-form submissions. When it is
 unset, `POST /api/contact` fails with a generic delivery error and the rest of the app is

@@ -60,7 +60,6 @@ const runtimeConfigSchema = z.object({
     mailgunDomain: z.string().optional().default(""),
     mailgunKey: z.string().optional().default(""),
     mailgunSender: z.string().email().optional().or(z.literal("")),
-    mailgunBcc: z.string().email().optional().or(z.literal("")),
     contactRecipient: z.string().email().optional().or(z.literal("")),
     contactRateLimit: numericEnvSchema(5, 1)
 });
@@ -90,7 +89,6 @@ const CONFIG_FALLBACKS: Partial<Record<keyof BackendConfig, string>> = {
     mailgunDomain: "",
     mailgunKey: "",
     mailgunSender: "",
-    mailgunBcc: "",
     contactRecipient: ""
 };
 
