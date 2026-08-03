@@ -83,16 +83,53 @@ That overlay also **pulls the image instead of building it**, which is the one p
 every other path in this runbook. All three services take
 `ghcr.io/cry0nics/chaptify:${CHAPTIFY_TAG}` and the base file's `build:` is dropped
 (`build: !reset null`), so a shared box needs no source tree, no Node toolchain, no build cache
-against its disk budget, and no build CPU competing with live transcodes. The image is published by
-this repo's CI on every push to main under an immutable `sha-<shortsha>` tag and a moving `latest`,
-and only after a Trivy scan of the freshly built image passes — a CRITICAL or HIGH finding that has a
-fix available fails the job before anything reaches the registry, so an ungated image cannot be
-pulled. Exceptions live in `.trivyignore`, every entry time-boxed with `exp:` and a reason; a weekly
-`image-rescan.yml` run re-applies the same filters to the published `latest` and emails on a red run.
-`CHAPTIFY_TAG` goes in `.env` next to the overlay (never `latest`, so no `pull` can silently move
-production onto a different build); deploying is bumping it, `docker compose pull`, `up -d`, and
-rollback is setting it to an earlier sha. CI keeps the ten most recent versions, which bounds the
-rollback window.
+against its disk budget, and no build CPU competing with live transcodes. `CHAPTIFY_TAG` goes in
+`.env` next to the overlay (never `latest`, so no `pull` can silently move production onto a different
+build); deploying is bumping it, `docker compose pull`, `up -d`, and rollback is setting it to an
+earlier sha. CI keeps the ten most recent versions, which bounds the rollback window.
+
+### R.2.1 The image vulnerability gate
+
+The image is published by this repo's CI on every push to main under an immutable `sha-<shortsha>` tag
+and a moving `latest`, and only after a Trivy scan of the freshly built image passes: a CRITICAL or
+HIGH finding **that has a fix available** fails the job before anything reaches the registry, so an
+ungated image can never be pulled. Restricting the gate to fixable findings is deliberate — a gate that
+blocks with no available remedy teaches its operator to route around it. The same scan also runs on
+every pull request in the read-only `docker` job, so a green PR means the image is publishable and the
+gate is never first discovered red after merge.
+
+Two consequences for the image itself, both load-bearing:
+
+- **npm is deleted from the Dockerfile's production stage.** The runtime invokes only
+  `node .output/*.mjs`, so npm is dead weight, but its bundled dependency tree is not ours to patch and
+  moved only when the base image shipped a newer npm — it produced CVEs with no action attached, which
+  is the noise the fixable-only rule exists to prevent. This does not shrink the image (a later `rm`
+  writes whiteouts over base-layer files); it removes them from the final filesystem.
+- **Transitive dependency findings are fixed by lockfile resolution**, not allowlisted. `.trivyignore`
+  is empty and should stay that way; if an entry ever becomes necessary it must carry a reason comment
+  and an `exp:` date no more than 90 days out, because the expiry is the review cadence.
+
+**Recurrence.** `image-rescan.yml` re-applies the identical filters to the published `latest` every
+Monday, plus an unfiltered informational report in the same log, and a red run emails via GitHub's
+normal workflow-failure notification. The response to a red rescan is a rebuild — which picks up
+patched base layers — then a redeploy by the usual four commands.
+
+> **This repository is public, so its scheduled workflows get switched off after 60 days of
+> inactivity** ([events that trigger
+> workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)),
+> and GitHub's docs promise no notification when that happens. Sixty quiet days is a normal state for a
+> finished project — precisely when an unattended weekly scan is the only thing still watching the
+> deployed image. A disabled workflow cannot report its own absence, so `ci.yml`'s `rescan-freshness`
+> job checks it from a trigger that still fires: every push and pull request queries the rescan's state
+> and last run, **failing** the run if it has been disabled and **warning** if the last run is more than
+> 21 days old. It is excluded from the `ci-complete` check, so it never blocks a merge. Re-arm with:
+>
+> ```bash
+> gh workflow enable image-rescan.yml    # or: Actions -> Image rescan -> "Enable workflow"
+> gh workflow run image-rescan.yml       # prove it works without waiting for Monday
+> ```
+>
+> Any push also resets the 60-day clock, so ordinary commits keep the schedule alive on their own.
 
 > **Why a dedicated network and not the shared one.** `NUXT_TRUST_PROXY=true` trusts the right-most
 > `X-Forwarded-For` hop from whoever connects, so it is only sound while a header-overwriting proxy is

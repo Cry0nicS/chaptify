@@ -39,6 +39,22 @@ ENV NUXT_STORAGE_ROOT=/data/chaptify
 
 # FFmpeg is the only extra runtime requirement; dependencies are prebuilt in the deps stage.
 RUN apk add --no-cache ffmpeg
+
+# Drop npm from the RUNTIME image only — the builder and deps stages above still need it, and this
+# stage never invokes it: every entrypoint is `node .output/<name>.mjs` and the healthcheck is
+# `node -e`. What ships in `node:24-alpine3.24` is npm's own bundled dependency tree, which is not
+# ours to patch and moves only when the base image ships a newer npm. Leaving it in meant the
+# vulnerability gate reported CVEs in a package manager that can never run here — findings with no
+# action attached, which is exactly what trains an operator to stop reading the gate. Removing it also
+# takes a package manager and arbitrary-code-fetching tool out of a container that processes untrusted
+# media.
+#
+# This does not shrink the image: the files live in the base layer and a later `rm` only writes
+# whiteouts over them. It removes them from the final filesystem, which is what both the scanner and
+# an attacker see. `corepack` and `yarn` are also present in the base image and equally unused, but
+# neither currently carries a finding, so they are left alone rather than trimmed on spec.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 COPY package*.json ./
 COPY --from=deps /app/node_modules ./node_modules
 

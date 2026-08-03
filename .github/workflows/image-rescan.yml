@@ -1,19 +1,36 @@
 name: Image rescan
 
-# CI's gate only ever sees an image at the moment it is built. New advisories land against images
-# that are already published and running, so a one-off pre-launch scan ages out. This workflow
-# re-applies the gate's exact filters to the image currently in the registry, weekly.
+# CI's gate only ever sees an image at the moment it is built. New advisories land against images that
+# are already published and running, so a one-off pre-launch scan ages out. This workflow re-applies
+# the gate's exact filters to the image currently in the registry, weekly.
 #
 # `latest` is the newest BUILT image, which equals the deployed tag except in the window between a
 # green CI run and the deploy commands being run, or when a deploy is deliberately held back. For a
 # single operator deploying shortly after building, that is the right precision for the cost. If the
 # drift ever becomes real, the fix is a repo variable naming the deployed tag.
+#
+# THIS WORKFLOW CAN BE SWITCHED OFF FOR YOU — AND NOTHING HERE WILL SAY SO
+#
+# The repository is PUBLIC, and in a public repository GitHub automatically disables scheduled
+# workflows once 60 days pass with no repository activity. Sixty quiet days is entirely plausible for a
+# finished side project, which is exactly the state in which an unattended weekly scan is the only thing
+# still watching the deployed image — so this is a real failure mode, not a footnote. GitHub's docs
+# promise no notification when it happens, and a disabled workflow cannot report its own absence, so
+# the mechanism has to live somewhere that still runs: `ci.yml` has a `rescan-freshness` job that
+# checks this workflow's state and last run on every push and pull request, failing the run if it has
+# been disabled and warning if its last run has gone stale. Re-enable with:
+#
+#   gh workflow enable image-rescan.yml
+#
+# (or the Actions tab -> Image rescan -> "Enable workflow"). A push also resets the 60-day clock, so
+# any commit both re-arms the timer and re-runs the freshness check.
 on:
   schedule:
     # Mondays 06:17 UTC. Off the top of the hour because scheduled runs bunch up — and can be delayed
-    # — when many workflows share a popular minute.
+    # or dropped — when many workflows share a popular minute.
     - cron: "17 6 * * 1"
-  # So the same check can be run on demand when an advisory shows up mid-week.
+  # So the same check can be run on demand when an advisory shows up mid-week, and so a re-enabled
+  # workflow can be proven working without waiting until Monday.
   workflow_dispatch: {}
 
 permissions: {}
@@ -22,20 +39,25 @@ jobs:
   rescan:
     name: Rescan published image
     runs-on: ubuntu-latest
+    # This job holds a registry scope, so its actions are pinned to full commit SHAs — same rule as
+    # ci.yml's publishing jobs. The Trivy pin must match the two in ci.yml exactly, or this stops being
+    # a rescan with "the gate's filters" and becomes a different scanner's opinion.
     permissions:
       # For the .trivyignore checkout.
       contents: read
-      # Enough to pull the private image; this workflow must never be able to publish one.
+      # Enough to pull the image; this workflow must never be able to publish one.
       packages: read
     env:
       IMAGE_REF: ghcr.io/cry0nics/chaptify:latest
     steps:
       # Only for .trivyignore — the same allowlist the gate uses, so the two cannot drift.
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Trivy has no registry credentials of its own; it reuses the docker config this step writes.
+      # Needed even once the package is public, so that a later decision to make it private does not
+      # quietly break the only recurring scan.
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -47,20 +69,18 @@ jobs:
       # informational pass can never stop the pass that matters.
       - name: Informational report (unfiltered, never fails)
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: ${{ env.IMAGE_REF }}
           scanners: vuln
           exit-code: "0"
-      # Identical filters to CI's gate, on purpose: a red run here means something fixable and
-      # serious now applies to the published image, and the response is the same as a red gate —
-      # rebuild (which picks up patched base layers) and redeploy. GitHub's workflow-failure email is
-      # the alert; no other notification path is involved. The repo is private, so the 60-day
-      # inactivity auto-disable of scheduled workflows — a public-repository rule — never applies and
-      # a quiet week does not stop the scanning.
+      # Identical filters to CI's gate, on purpose: a red run here means something fixable and serious
+      # now applies to the published image, and the response is the same as a red gate — rebuild (which
+      # picks up patched base layers) and redeploy. GitHub's workflow-failure email is the alert; no
+      # other notification path is involved.
       - name: Gate-equivalent check (a failure here is the alert)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: ${{ env.IMAGE_REF }}
