@@ -1,0 +1,71 @@
+name: Image rescan
+
+# CI's gate only ever sees an image at the moment it is built. New advisories land against images
+# that are already published and running, so a one-off pre-launch scan ages out. This workflow
+# re-applies the gate's exact filters to the image currently in the registry, weekly.
+#
+# `latest` is the newest BUILT image, which equals the deployed tag except in the window between a
+# green CI run and the deploy commands being run, or when a deploy is deliberately held back. For a
+# single operator deploying shortly after building, that is the right precision for the cost. If the
+# drift ever becomes real, the fix is a repo variable naming the deployed tag.
+on:
+  schedule:
+    # Mondays 06:17 UTC. Off the top of the hour because scheduled runs bunch up — and can be delayed
+    # — when many workflows share a popular minute.
+    - cron: "17 6 * * 1"
+  # So the same check can be run on demand when an advisory shows up mid-week.
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  rescan:
+    name: Rescan published image
+    runs-on: ubuntu-latest
+    permissions:
+      # For the .trivyignore checkout.
+      contents: read
+      # Enough to pull the private image; this workflow must never be able to publish one.
+      packages: read
+    env:
+      IMAGE_REF: ghcr.io/cry0nics/chaptify:latest
+    steps:
+      # Only for .trivyignore — the same allowlist the gate uses, so the two cannot drift.
+      - name: Checkout
+        uses: actions/checkout@v6
+      # Trivy has no registry credentials of its own; it reuses the docker config this step writes.
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The honest record of what the published image actually carries, including everything the gate
+      # filters out: every severity, unfixed findings, and anything allowlisted. Blocks nothing — it
+      # exists to be read when someone wants the full picture, and runs first so its output is in the
+      # log even when the gate below then fails the job. `continue-on-error` so a hiccup in this
+      # informational pass can never stop the pass that matters.
+      - name: Informational report (unfiltered, never fails)
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE_REF }}
+          scanners: vuln
+          exit-code: "0"
+      # Identical filters to CI's gate, on purpose: a red run here means something fixable and
+      # serious now applies to the published image, and the response is the same as a red gate —
+      # rebuild (which picks up patched base layers) and redeploy. GitHub's workflow-failure email is
+      # the alert; no other notification path is involved. The repo is private, so the 60-day
+      # inactivity auto-disable of scheduled workflows — a public-repository rule — never applies and
+      # a quiet week does not stop the scanning.
+      - name: Gate-equivalent check (a failure here is the alert)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE_REF }}
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
