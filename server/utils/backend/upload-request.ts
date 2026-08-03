@@ -215,8 +215,9 @@ export const collectUploadedFilePaths = (files: formidable.Files): string[] =>
 /**
  * Streams one multipart upload to a temporary file inside the storage root.
  *
- * `onFileBegin` reports each temp path as soon as formidable opens it so the caller can clean up
- * even if the request aborts mid-stream. Three independent bounds (see `UploadLimits`) abort a
+ * `onFileBegin` reports each temp path as soon as formidable announces it — just before the file is
+ * opened, so it may not exist on disk yet — so the caller can clean up even if the request aborts
+ * mid-stream. Three independent bounds (see `UploadLimits`) abort a
  * client that cannot be allowed to keep its upload slot: an inactivity timeout, a hard total
  * lifetime, and a sustained-throughput floor. Every abort path destroys the request, which rejects
  * this promise so the caller deletes the partial file and releases the slot.
