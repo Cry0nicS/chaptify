@@ -1,0 +1,30 @@
+version: 2
+
+# Exists for one reason: the workflows pin actions to full commit SHAs, and a SHA never moves on its
+# own. Without something bumping them, the vulnerability gate's scanner is frozen at whatever Trivy
+# version `trivy-action` bundled the day it was pinned — a security gate quietly aging into
+# irrelevance, which is not a trade the pinning was meant to make.
+#
+# Dependabot reads the `# vX.Y.Z` comment that follows each pin and rewrites the SHA and the comment
+# together, so the pins stay both current and readable.
+#
+# Deliberately github-actions only. The npm ecosystem is not enabled: dependency bumps for a Nuxt app
+# want to be taken deliberately with the test suite and the image gate as the judge, and the weekly
+# image rescan already surfaces anything in the built image that has a fix available.
+#
+# No `labels:` key — Dependabot errors on a label the repository does not have, and this repo carries
+# only the GitHub defaults.
+updates:
+  - package-ecosystem: github-actions
+    # `/` means .github/workflows, not a directory that contains them.
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    # One pull request for all action bumps instead of one per action: they get reviewed as a batch, and
+    # a single PR runs the image gate once rather than five times.
+    groups:
+      actions:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 3
