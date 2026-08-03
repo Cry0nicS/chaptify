@@ -64,7 +64,6 @@ export default defineNuxtConfig({
         mailgunDomain: process.env.NUXT_MAILGUN_DOMAIN || "",
         mailgunKey: process.env.NUXT_MAILGUN_KEY || "",
         mailgunSender: process.env.NUXT_MAILGUN_SENDER || "",
-        mailgunBcc: process.env.NUXT_MAILGUN_BCC || "",
         contactRecipient: process.env.NUXT_CONTACT_RECIPIENT || "",
         contactRateLimit: "5",
 

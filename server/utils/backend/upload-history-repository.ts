@@ -9,10 +9,21 @@ import type {CreateJobInput} from "./jobs-repository";
 /**
  * One permanent row per upload, kept for historical analysis.
  *
- * Unlike `jobs`, this table is never cleaned up or anonymized: it intentionally retains the
- * inferred book name, the recipient email, and probed metadata after the operational job row has
- * been scrubbed. Fields that could not be determined (e.g. metadata of a file that failed before
- * probing) stay NULL so history can be filtered and sorted later.
+ * The row is permanent; the address in it is not. `email` is scrubbed to NULL the moment the
+ * corresponding `jobs.email` is scrubbed — see `scrubScrubbedJobEmails` — leaving the inferred book
+ * name, timestamps, sizes, formats, status and probed metadata as non-identifying usage history that
+ * can be kept indefinitely.
+ *
+ * This reverses the table's original design, which deliberately retained the address forever. The
+ * reason: an address that has already delivered its download link has no remaining purpose, so keeping
+ * it is pure liability. Replacing it with an irreversible per-uploader hash was considered and
+ * rejected — a keyed hash whose secret the operator still holds is *pseudonymous*, not anonymous, so
+ * it would have preserved exactly the liability the change exists to remove (GDPR Art. 4(5) and
+ * Recital 26; Art. 11(2) is unavailable while the secret is held). NULL discharges it, at the cost of
+ * per-person attribution: unique- and repeat-uploader counts are not answerable after delivery.
+ *
+ * Fields that could not be determined (e.g. metadata of a file that failed before probing) stay NULL
+ * so history can be filtered and sorted later.
  */
 export interface UploadHistoryRecord {
     id: number;
@@ -25,7 +36,8 @@ export interface UploadHistoryRecord {
     fileSizeBytes: number;
     sourceFormat: "mp3" | "m4b";
     outputFormat: "mp3" | "m4b";
-    email: string;
+    /** NULL once the address has been scrubbed, which is the normal state for any delivered upload. */
+    email: string | null;
     status: PublicJobStatus;
     emailStatus: PublicEmailStatus;
     errorCode: PublicProcessingErrorCode | null;
@@ -54,7 +66,9 @@ const rowToUploadHistory = (row: Record<string, unknown>): UploadHistoryRecord =
     fileSizeBytes: Number(row.file_size_bytes),
     sourceFormat: row.source_format as "mp3" | "m4b",
     outputFormat: row.output_format as "mp3" | "m4b",
-    email: String(row.email),
+    // Guarded like every other nullable column here. Without the guard a scrubbed row would surface
+    // the literal string "null" as an address, so the scrub would look like it had silently failed.
+    email: row.email === null ? null : String(row.email),
     status: row.status as PublicJobStatus,
     emailStatus: row.email_status as PublicEmailStatus,
     errorCode: row.error_code === null ? null : (row.error_code as PublicProcessingErrorCode),
@@ -107,6 +121,31 @@ export const createUploadHistoryRepository = (database: Database.Database) => {
                 OR upload_history.completed_at IS NOT jobs.completed_at)
     `
     );
+    /**
+     * Enforces the one rule that governs the address: a history row holds an email only while the
+     * operational job row still does.
+     *
+     * Deliberately a separate statement rather than another column on the mirror above. The mirror
+     * only fires when one of its four columns actually differs, so a transition that nulls
+     * `jobs.email` without touching status, email status, error code or completion time would not
+     * trigger it — the address would survive. This statement's own `WHERE` is the condition, so it
+     * cannot be skipped that way, and it is idempotent: it touches only rows that still need it.
+     *
+     * That also makes it self-backfilling. Rows written before this behaviour existed, whose jobs were
+     * scrubbed long ago, are cleaned up by the first sweep after deployment — no separate migration.
+     *
+     * `UPDATE ... FROM` needs SQLite 3.33+, which the mirror above already requires.
+     */
+    const scrubScrubbedJobEmailsStatement = database.prepare(
+        `
+        UPDATE upload_history
+        SET email = NULL
+        FROM jobs
+        WHERE jobs.public_job_id = upload_history.public_job_id
+            AND jobs.email IS NULL
+            AND upload_history.email IS NOT NULL
+    `
+    );
 
     /**
      * History rows are bookkeeping: a write failure must never fail an upload or a job
@@ -133,13 +172,20 @@ export const createUploadHistoryRepository = (database: Database.Database) => {
 
     /**
      * Mirrors the live status, email status, error code, and completion time from `jobs` into
-     * `upload_history`. Running the mirror as one bulk statement after each transition keeps the
-     * history correct even for bulk job updates (e.g. `expirePendingEmails`), and the emails and
-     * titles captured at upload time are deliberately never overwritten by later anonymization.
+     * `upload_history`, then scrubs the address from any row whose job no longer holds one. Running
+     * both as bulk statements after each transition keeps the history correct even for bulk job
+     * updates (e.g. `expirePendingEmails`).
+     *
+     * The scrub rides along here rather than being wired into each of the five places that null
+     * `jobs.email` because this is already called after every job transition — so the invariant holds
+     * without five separate call sites to keep in step, and a future transition that nulls the address
+     * inherits the behaviour instead of having to remember it. Titles captured at upload time are still
+     * never overwritten; only the address is.
      */
     const syncFromJobs = () => {
         try {
             syncHistoryStatement.run();
+            scrubScrubbedJobEmailsStatement.run();
         } catch (error) {
             console.warn("Upload history sync skipped", {error: String(error)});
         }

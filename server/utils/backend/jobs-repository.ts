@@ -916,6 +916,10 @@ export const createJobRepository = (database: Database.Database) => {
                 `
                 )
                 .run(internalId);
+            // The only path that nulls `jobs.email` without already syncing. Without this, a failed
+            // job's address would be scrubbed operationally but left in the history row indefinitely,
+            // which is the exact gap the history invariant exists to close.
+            history.syncFromJobs();
         },
         recordHistoryInspection: history.recordInspection,
         listUploadHistory: history.list

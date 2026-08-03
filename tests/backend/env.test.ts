@@ -20,13 +20,13 @@ describe("runtime environment loading", () => {
                 NUXT_MAILGUN_DOMAIN=mg.example.test
                 NUXT_MAILGUN_KEY="key-test"
                 NUXT_MAILGUN_SENDER='Chaptify <sender@example.test>'
-                export NUXT_MAILGUN_BCC=bcc@example.test # optional recipient
+                export NUXT_MAILGUN_BASE_URL=https://api.eu.mailgun.net # export + trailing comment
             `)
         ).toEqual({
             NUXT_MAILGUN_DOMAIN: "mg.example.test",
             NUXT_MAILGUN_KEY: "key-test",
             NUXT_MAILGUN_SENDER: "Chaptify <sender@example.test>",
-            NUXT_MAILGUN_BCC: "bcc@example.test"
+            NUXT_MAILGUN_BASE_URL: "https://api.eu.mailgun.net"
         });
     });
 

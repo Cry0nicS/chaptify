@@ -206,7 +206,6 @@ The project currently defines these server-only runtime values:
 - `NUXT_MAILGUN_DOMAIN`
 - `NUXT_MAILGUN_KEY`
 - `NUXT_MAILGUN_SENDER`
-- `NUXT_MAILGUN_BCC`
 
 No public runtime configuration (`runtimeConfig.public`) is currently defined.
 
