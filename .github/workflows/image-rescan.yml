@@ -16,14 +16,20 @@ name: Image rescan
 # finished side project, which is exactly the state in which an unattended weekly scan is the only thing
 # still watching the deployed image — so this is a real failure mode, not a footnote. GitHub's docs
 # promise no notification when it happens, and a disabled workflow cannot report its own absence, so
-# the mechanism has to live somewhere that still runs: `ci.yml` has a `rescan-freshness` job that
-# checks this workflow's state and last run on every push and pull request, failing the run if it has
-# been disabled and warning if its last run has gone stale. Re-enable with:
+# `ci.yml` has a `rescan-freshness` job that checks this workflow's state and last run on every push
+# and pull request, failing the run if it has been disabled and warning if its last run has gone stale.
+# Re-enable with:
 #
 #   gh workflow enable image-rescan.yml
 #
-# (or the Actions tab -> Image rescan -> "Enable workflow"). A push also resets the 60-day clock, so
-# any commit both re-arms the timer and re-runs the freshness check.
+# (or the Actions tab -> Image rescan -> "Enable workflow").
+#
+# That job is detection on the next activity, NOT continuous monitoring: it is triggered by the same
+# activity whose absence disables this schedule, so nothing warns during the quiet stretch itself. It
+# turns a permanent silent failure into one reported the moment anyone touches the repository again, and
+# since any push also resets the 60-day clock, ordinary commits keep this schedule alive on their own.
+# Coverage through a genuinely dormant period would have to come from outside this repository — see
+# docs/deployment.md for the options and the note that none is implemented.
 on:
   schedule:
     # Mondays 06:17 UTC. Off the top of the hour because scheduled runs bunch up — and can be delayed

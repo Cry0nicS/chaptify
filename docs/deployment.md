@@ -88,6 +88,21 @@ against its disk budget, and no build CPU competing with live transcodes. `CHAPT
 build); deploying is bumping it, `docker compose pull`, `up -d`, and rollback is setting it to an
 earlier sha. CI keeps the ten most recent versions, which bounds the rollback window.
 
+> **`sha-<shortsha>` names a commit, not a set of bytes.** GHCR has no immutable-tag setting, so
+> re-running the publish workflow for the same commit rebuilds against whatever `node:24-alpine3.24`
+> and Alpine apk packages are current that day and reassigns the tag. The normal flow — deploy from a
+> fresh CI run, never re-run one — makes the tag stable enough to operate on, and it is what makes the
+> `.env` line readable. But the guarantee is "this is the build CI made for that commit", not "these
+> exact bytes forever". Each publish run's summary records the digest it pushed; when the bytes matter,
+> append it, since a reference may carry both and the digest wins:
+>
+> ```bash
+> CHAPTIFY_TAG=sha-1a2b3c4@sha256:9f86d0818...   # same pin, resolved by digest
+> ```
+>
+> Verify what a box is actually running with
+> `docker compose images` or `docker image inspect --format '{{index .RepoDigests 0}}'`.
+
 ### R.2.1 The image vulnerability gate
 
 The image is published by this repo's CI on every push to main under an immutable `sha-<shortsha>` tag
@@ -119,17 +134,30 @@ patched base layers — then a redeploy by the usual four commands.
 > workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)),
 > and GitHub's docs promise no notification when that happens. Sixty quiet days is a normal state for a
 > finished project — precisely when an unattended weekly scan is the only thing still watching the
-> deployed image. A disabled workflow cannot report its own absence, so `ci.yml`'s `rescan-freshness`
-> job checks it from a trigger that still fires: every push and pull request queries the rescan's state
-> and last run, **failing** the run if it has been disabled and **warning** if the last run is more than
-> 21 days old. It is excluded from the `ci-complete` check, so it never blocks a merge. Re-arm with:
+> deployed image.
+>
+> `ci.yml`'s `rescan-freshness` job queries the rescan's state and last run on every push and pull
+> request, **failing** the run if it has been disabled and **warning** if the last run is more than 21
+> days old. It is excluded from the `ci-complete` check, so it never blocks a merge. Re-arm with:
 >
 > ```bash
 > gh workflow enable image-rescan.yml    # or: Actions -> Image rescan -> "Enable workflow"
 > gh workflow run image-rescan.yml       # prove it works without waiting for Monday
 > ```
 >
-> Any push also resets the 60-day clock, so ordinary commits keep the schedule alive on their own.
+> **Be clear about what that job does and does not do.** It is detection on the next activity, not
+> continuous monitoring. Its triggers are pushes and pull requests — the very activity whose absence
+> disables the schedule — so during the quiet period that trips the 60-day timer, nothing runs and
+> nothing warns. What it buys is that the failure stops being permanent and silent: the moment anyone
+> touches the repository again, the run goes red and says exactly which command re-arms it. Since any
+> push also resets the 60-day clock, ordinary commits keep the schedule alive on their own, and the only
+> uncovered state is a repository nobody has touched in two months.
+>
+> Genuinely continuous coverage has to come from outside this repository, and the options are: a timer
+> on the VPS (it already runs cron for backups, and `trivy image <ref>` needs no GitHub involvement), a
+> scheduled job in another repository that stays active, or making this repository private, which
+> removes the inactivity rule altogether. None is implemented here — pick one if the box is expected to
+> run unattended for months at a stretch.
 
 > **Why a dedicated network and not the shared one.** `NUXT_TRUST_PROXY=true` trusts the right-most
 > `X-Forwarded-For` hop from whoever connects, so it is only sound while a header-overwriting proxy is

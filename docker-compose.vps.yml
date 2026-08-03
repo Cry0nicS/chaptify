@@ -19,7 +19,7 @@
 # THE IMAGE COMES FROM A REGISTRY, PINNED BY SHA
 #
 # All three services run one image, published by this repo's CI on every push to main under two tags:
-# an immutable `sha-<shortsha>` and a moving `latest`. This overlay pins the sha tag through
+# a per-commit `sha-<shortsha>` and a moving `latest`. This overlay pins the sha tag through
 # `CHAPTIFY_TAG` and drops the base file's `build:`, so the box never builds and never needs the
 # source: no Node toolchain on it, no build cache against its disk budget, and no build CPU competing
 # with live transcodes on shared vCPUs. `latest` is deliberately never referenced here — an accidental
@@ -32,6 +32,15 @@
 # of an empty tag.
 #
 #   CHAPTIFY_TAG=sha-1a2b3c4    # in .env, matching a green CI run
+#
+# The `sha-` tag names a COMMIT, not a set of bytes — GHCR has no immutable-tag setting, so re-running
+# the publish workflow for the same commit rebuilds against whatever base image and apk packages are
+# current that day and reassigns the tag. In practice you deploy from a fresh CI run and never re-run
+# one, so the tag is stable enough to operate on. When the exact bytes matter — an audited rollback, or
+# proving what a box is running — append the digest from that run's summary. A reference may carry both
+# and the digest wins, so this needs no change to the pin above:
+#
+#   CHAPTIFY_TAG=sha-1a2b3c4@sha256:9f86d0818...
 services:
     chaptify:
         image: ghcr.io/cry0nics/chaptify:${CHAPTIFY_TAG:?set CHAPTIFY_TAG in .env to the sha- tag to run}

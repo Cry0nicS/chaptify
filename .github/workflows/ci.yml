@@ -208,8 +208,14 @@ jobs:
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Resolve image tag
         id: tag
-        # The immutable tag. On a push event `github.sha` is the commit that landed on main, so this
-        # names exactly the tree that was built — the one thing `latest` alone can never tell you.
+        # On a push event `github.sha` is the commit that landed on main, so this names the tree that
+        # was built — the one thing `latest` alone can never tell you.
+        #
+        # It names a COMMIT, not a set of bytes. GHCR has no immutable-tag setting, so re-running this
+        # workflow for the same commit rebuilds against whatever `node:24-alpine3.24` and Alpine's apk
+        # repo serve that day and overwrites the tag with different bytes. The push step below records
+        # the digest it actually pushed so the mapping is recoverable from the run log; byte-exact
+        # pinning is a digest, not this tag.
         run: echo "short-sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
       - name: Build image (local only, not pushed)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -261,10 +267,46 @@ jobs:
           docker tag chaptify:scan "$SHA_TAG"
           docker tag chaptify:scan "$LATEST_TAG"
           docker push "$SHA_TAG"
+          # Same digest, so this only writes a second tag pointing at the manifest just uploaded.
           docker push "$LATEST_TAG"
-          echo "Published $SHA_TAG (also tagged latest)."
-          echo "Deploy it by setting CHAPTIFY_TAG=sha-${{ steps.tag.outputs.short-sha }} on the box." \
-            >> "$GITHUB_STEP_SUMMARY"
+
+          # Record what the tag resolved to. The tag is a name a re-run can reassign; the digest is the
+          # content. Keeping it in the run log means a rollback can be made byte-exact, and that a box
+          # can be checked against what CI actually published.
+          #
+          # Filtered by repository rather than `index .RepoDigests 0`: the image is tagged into more than
+          # one repository here (`chaptify:scan` as well as GHCR), so RepoDigests holds several entries
+          # and index 0 is whichever the daemon happens to list first. Verified against a local registry.
+          # `|| true` because a non-matching grep would otherwise trip `pipefail` and kill the step before
+          # the guard below could explain why.
+          digest=$(docker image inspect "$SHA_TAG" --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+            | grep -m1 "^${IMAGE_NAME}@" | cut -d@ -f2 || true)
+          if [ -z "$digest" ]; then
+            echo "::error title=Could not read the pushed digest::${SHA_TAG} has no ${IMAGE_NAME}@sha256 entry after push"
+            exit 1
+          fi
+          echo "Published $SHA_TAG (also tagged latest) at ${digest}."
+          {
+            echo "### Published image"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| tag | \`sha-${{ steps.tag.outputs.short-sha }}\` |"
+            echo "| digest | \`${digest}\` |"
+            echo
+            echo "Deploy by setting this in the box's \`.env\`:"
+            echo
+            echo '```bash'
+            echo "CHAPTIFY_TAG=sha-${{ steps.tag.outputs.short-sha }}"
+            echo '```'
+            echo
+            echo "A reference may carry both, and the digest wins — use this form when the exact bytes"
+            echo "matter more than readability (an audited rollback, or verifying a box):"
+            echo
+            echo '```bash'
+            echo "CHAPTIFY_TAG=sha-${{ steps.tag.outputs.short-sha }}@${digest}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Every build rewrites the application layers, so versions would otherwise accumulate forever. A GHCR
   # package is private on first publish even from a public repository, and a private package's size
@@ -299,13 +341,18 @@ jobs:
   # The repository is public, so GitHub disables its scheduled workflows after 60 days with no
   # repository activity — and documents no notification when it does. The weekly image rescan is the
   # only thing watching the image that is already deployed, and a disabled workflow cannot report its
-  # own absence, so the check has to run from something that is still triggered. That is here: every
-  # push and pull request asks the API what state the rescan is in.
+  # own absence, so the check runs here instead: every push and pull request asks the API what state the
+  # rescan is in.
   #
-  # This is not merely a nag. Sixty quiet days is a normal state for a finished side project, which is
-  # precisely when an unattended weekly scan matters most, and the same inactivity that trips the
-  # 60-day timer also means nobody is looking at the Actions tab. Any push both resets that timer and
-  # re-runs this check, so the first activity after a quiet spell surfaces the gap.
+  # BE HONEST ABOUT THE COVERAGE THIS BUYS. This is detection on the next activity, not continuous
+  # monitoring. Its triggers are exactly the activity whose absence disables the schedule, so through
+  # the quiet stretch that trips the 60-day timer nothing here runs and nothing warns. What it buys is
+  # that the failure stops being permanent and silent — the next time anyone touches the repository the
+  # run goes red and names the command that re-arms it. Any push also resets the 60-day clock, so
+  # ordinary commits keep the schedule alive by themselves and the only uncovered state is a repository
+  # untouched for two months. Continuous coverage would have to come from outside this repository (a
+  # timer on the VPS, a schedule in a repository that stays active, or making this one private);
+  # docs/deployment.md records those options and that none is implemented.
   rescan-freshness:
     name: Rescan workflow still armed
     runs-on: ubuntu-latest
