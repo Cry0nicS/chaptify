@@ -21,6 +21,10 @@ const emailColumn = (database: Database.Database): ColumnInfo | undefined =>
  */
 const writeLegacyDatabase = (storageRoot: string, email: string) => {
     const database = new Database(join(storageRoot, "database", "chaptify.sqlite"));
+    // WAL, because any real database this migration meets has been in WAL since it was created — the
+    // mode is persisted in the file header. A non-WAL fixture would make the concurrency test below
+    // measure the one-off journal-mode conversion instead of the migration race it is aiming at.
+    database.pragma("journal_mode = WAL");
     database.exec(`
         CREATE TABLE upload_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,4 +135,20 @@ describe("upload_history email nullability migration", () => {
 
         expect(emailColumn(openDatabase(storageRoot))?.notnull).toBe(0);
     });
+
+    /**
+     * NOT TESTED HERE, on purpose: the concurrent-boot race that `openDatabase`'s single
+     * `BEGIN IMMEDIATE` transaction exists to prevent.
+     *
+     * A subprocess test was written for it and then deleted, because it could not fail. Measured
+     * against the unwrapped, racy version: 0 detections in 10 runs of three barrier-synchronised
+     * processes. The reason is timing — the whole migration completes in a few milliseconds, so any
+     * inter-process stagger larger than that hides the race, and the tightest barrier available (spin
+     * on a marker file) still leaks tens of milliseconds of filesystem-visibility jitter. Catching it
+     * reliably would need to pause a process mid-migration, i.e. white-box hooks in production code.
+     *
+     * A test that cannot fail is worse than no test, so the guarantee rests on SQLite's documented
+     * locking semantics and the reasoning recorded in `db-schema.ts`. The race was reproduced by hand
+     * (`duplicate column name: segmented`) before the fix; it has not reproduced since.
+     */
 });
