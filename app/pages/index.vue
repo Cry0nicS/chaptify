@@ -108,7 +108,7 @@ const layers = [
                     </div>
                     <div>
                         <dt class="micro-label">Cost</dt>
-                        <dd class="text-highlighted mt-1 font-semibold">Free · no account</dd>
+                        <dd class="text-highlighted mt-1 font-semibold">Free</dd>
                     </div>
                 </dl>
 
