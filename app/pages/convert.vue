@@ -41,15 +41,12 @@ const {
     startOver
 } = useConversionWorkflow();
 
-const hasJobState = computed(
-    () =>
-        Boolean(pageError.value) ||
-        Boolean(deleteError.value) ||
-        Boolean(terminalJob.value) ||
-        workflow.value.status === "queued" ||
-        workflow.value.status === "processing" ||
-        (workflow.value.status === "failed" && !workflow.value.job)
-);
+/*
+ * The right column is one slot: the upload form until a job exists, then that job's progress and
+ * result in its place. Sticky only applies to the form, because a terminal job's stack can be taller
+ * than the viewport and must stay scrollable.
+ */
+const showJobPanel = computed(() => !isRecovering.value && !showUploadForm.value);
 
 // One row of chips: everything the re-encode carries across untouched.
 const preserved = [
@@ -158,8 +155,10 @@ const layers = [
                 </div>
             </div>
 
-            <div class="lg:sticky lg:top-24 lg:self-start">
-                <div class="pane pane-front pane-settle pane-settle-2 p-5 sm:p-6">
+            <div :class="showJobPanel ? 'lg:self-start' : 'lg:sticky lg:top-24 lg:self-start'">
+                <div
+                    v-if="!showJobPanel"
+                    class="pane pane-front pane-settle pane-settle-2 p-5 sm:p-6">
                     <div class="mb-5 flex items-center justify-between gap-4">
                         <h2 class="text-highlighted text-lg font-semibold tracking-tight">
                             Convert your audiobook
@@ -205,73 +204,71 @@ const layers = [
                         upload audio you own or are authorised to convert.
                     </p>
                 </div>
-            </div>
-        </section>
 
-        <section
-            v-if="hasJobState"
-            class="mb-12 flex flex-col gap-4">
-            <UAlert
-                v-if="pageError"
-                color="error"
-                variant="soft"
-                icon="i-lucide-circle-alert"
-                :title="pageError.message"
-                :description="pageError.guidance"
-                role="alert" />
+                <div
+                    v-else
+                    class="flex flex-col gap-4">
+                    <template v-if="workflow.status === 'queued'">
+                        <JobProgress
+                            v-if="workflow.job"
+                            :job="workflow.job"
+                            :previous-progress="visibleProgress"
+                            :transient-error="transientError" />
+                        <UAlert
+                            color="primary"
+                            variant="soft"
+                            icon="i-lucide-mail"
+                            title="Link queued for delivery"
+                            :description="
+                                maskedSubmittedEmail
+                                    ? `Sending to ${maskedSubmittedEmail} when the conversion finishes.`
+                                    : 'The download link will be sent by email.'
+                            " />
+                    </template>
 
-            <template v-if="workflow.status === 'queued'">
-                <JobProgress
-                    v-if="workflow.job"
-                    :job="workflow.job"
-                    :previous-progress="visibleProgress"
-                    :transient-error="transientError" />
+                    <JobProgress
+                        v-if="workflow.status === 'processing'"
+                        :job="workflow.job"
+                        :previous-progress="visibleProgress"
+                        :transient-error="transientError" />
+
+                    <UAlert
+                        v-if="deleteError"
+                        color="warning"
+                        variant="soft"
+                        icon="i-lucide-circle-alert"
+                        title="Could not delete the file"
+                        :description="deleteError" />
+
+                    <JobResult
+                        v-if="terminalJob"
+                        :job="terminalJob"
+                        kind="convert"
+                        :can-browser-download="canBrowserDownload"
+                        :browser-download-error="browserDownloadError"
+                        :is-browser-download-starting="isBrowserDownloadStarting"
+                        :can-delete="canDelete"
+                        :is-deleting="isDeleting"
+                        :deleted="deleted"
+                        @download="downloadReadyJob"
+                        @delete="deleteReadyJob"
+                        @start-over="startOver" />
+                </div>
+
                 <UAlert
-                    color="primary"
+                    v-if="pageError"
+                    class="mt-4"
+                    color="error"
                     variant="soft"
-                    icon="i-lucide-mail"
-                    title="Link queued for delivery"
-                    :description="
-                        maskedSubmittedEmail
-                            ? `Sending to ${maskedSubmittedEmail} when the conversion finishes.`
-                            : 'The download link will be sent by email.'
-                    " />
-            </template>
+                    icon="i-lucide-circle-alert"
+                    :title="pageError.message"
+                    :description="pageError.guidance"
+                    role="alert" />
 
-            <JobProgress
-                v-if="workflow.status === 'processing'"
-                :job="workflow.job"
-                :previous-progress="visibleProgress"
-                :transient-error="transientError" />
-
-            <UAlert
-                v-if="deleteError"
-                color="warning"
-                variant="soft"
-                icon="i-lucide-circle-alert"
-                title="Could not delete the file"
-                :description="deleteError" />
-
-            <JobResult
-                v-if="terminalJob"
-                :job="terminalJob"
-                kind="convert"
-                :can-browser-download="canBrowserDownload"
-                :browser-download-error="browserDownloadError"
-                :is-browser-download-starting="isBrowserDownloadStarting"
-                :can-delete="canDelete"
-                :is-deleting="isDeleting"
-                :deleted="deleted"
-                @download="downloadReadyJob"
-                @delete="deleteReadyJob"
-                @start-over="startOver" />
-
-            <div
-                v-if="workflow.status === 'failed' && !workflow.job"
-                class="flex justify-start">
                 <UButton
+                    v-if="workflow.status === 'failed' && !workflow.job"
                     type="button"
-                    class="rounded-full"
+                    class="mt-4 rounded-full"
                     color="neutral"
                     variant="subtle"
                     icon="i-lucide-refresh-cw"
