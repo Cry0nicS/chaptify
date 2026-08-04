@@ -36,7 +36,7 @@ const statusMessage = computed(() => {
 
 <template>
     <section
-        class="border-default bg-default space-y-4 rounded-lg border p-5"
+        class="pane space-y-4 p-6"
         aria-live="polite">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -49,7 +49,7 @@ const statusMessage = computed(() => {
                 <h2 class="text-highlighted text-lg font-semibold">{{ statusTitle }}</h2>
                 <p class="text-muted text-sm">{{ statusMessage }}</p>
             </div>
-            <p class="text-highlighted font-mono text-2xl font-semibold tabular-nums">
+            <p class="text-secondary font-mono text-3xl font-medium tabular-nums">
                 {{ displayProgress }}%
             </p>
         </div>

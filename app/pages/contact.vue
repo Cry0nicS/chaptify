@@ -99,22 +99,21 @@ const sendAnother = () => {
 </script>
 
 <template>
-    <div class="mx-auto max-w-5xl py-10 sm:py-16">
-        <section class="max-w-3xl space-y-5">
-            <p class="text-primary font-mono text-xs tracking-[0.25em] uppercase">Contact</p>
+    <div class="pb-16">
+        <section class="pt-12 pb-2 lg:pt-16">
             <h1
-                class="font-display text-highlighted text-4xl font-bold tracking-tight text-balance sm:text-6xl">
+                class="font-display text-highlighted max-w-[18ch] text-4xl font-bold tracking-[-0.042em] text-balance sm:text-5xl lg:text-6xl">
                 Get in touch.
             </h1>
-            <p class="text-muted max-w-2xl text-base sm:text-lg">
+            <p class="text-toned mt-6 max-w-[54ch] text-base sm:text-lg">
                 Chaptify is a one-person project, and it improves through messages like yours.
                 Feature ideas, bug reports, or a simple hello — all of it lands in the same inbox.
             </p>
         </section>
 
-        <div class="mt-12 grid gap-10 lg:grid-cols-2 lg:gap-16">
+        <div class="grid gap-10 pt-12 lg:grid-cols-[minmax(0,1fr)_minmax(26rem,0.95fr)] lg:gap-14">
             <section
-                class="space-y-8"
+                class="flex flex-col gap-5"
                 aria-labelledby="contact-info">
                 <h2
                     id="contact-info"
@@ -122,54 +121,54 @@ const sendAnother = () => {
                     What to contact us about
                 </h2>
 
-                <div class="flex gap-4">
-                    <UIcon
-                        name="i-lucide-lightbulb"
-                        class="text-primary mt-1 size-5 shrink-0" />
-                    <div class="space-y-1">
+                <div class="pane pane-lift p-6">
+                    <div class="flex items-center gap-2.5">
+                        <UIcon
+                            name="i-lucide-lightbulb"
+                            class="text-primary size-4 shrink-0" />
                         <h3 class="text-highlighted font-semibold">Feature suggestions</h3>
-                        <p class="text-muted text-sm">
-                            Missing a format, a setting, or a whole idea? Describe how you would use
-                            it — real listening setups (which watch, which player) make features
-                            much easier to build right.
-                        </p>
                     </div>
+                    <p class="text-muted mt-2.5 text-sm">
+                        Missing a format, a setting, or a whole idea? Describe how you would use it
+                        — real listening setups (which watch, which player) make features much
+                        easier to build right.
+                    </p>
                 </div>
 
-                <div class="flex gap-4">
-                    <UIcon
-                        name="i-lucide-bug"
-                        class="text-primary mt-1 size-5 shrink-0" />
-                    <div class="space-y-1">
+                <div class="pane pane-lift p-6">
+                    <div class="flex items-center gap-2.5">
+                        <UIcon
+                            name="i-lucide-bug"
+                            class="text-primary size-4 shrink-0" />
                         <h3 class="text-highlighted font-semibold">Bug reports</h3>
-                        <p class="text-muted text-sm">
-                            Say what you uploaded (format and rough size), which output format you
-                            picked, and what happened instead of chapters. Please don't attach or
-                            link the audiobook itself — a description is enough.
-                        </p>
                     </div>
+                    <p class="text-muted mt-2.5 text-sm">
+                        Say what you uploaded (format and rough size), which output format you
+                        picked, and what happened instead of chapters. Please don't attach or link
+                        the audiobook itself — a description is enough.
+                    </p>
                 </div>
 
-                <div class="flex gap-4">
-                    <UIcon
-                        name="i-lucide-message-circle"
-                        class="text-primary mt-1 size-5 shrink-0" />
-                    <div class="space-y-1">
+                <div class="pane pane-lift p-6">
+                    <div class="flex items-center gap-2.5">
+                        <UIcon
+                            name="i-lucide-message-circle"
+                            class="text-primary size-4 shrink-0" />
                         <h3 class="text-highlighted font-semibold">Anything else</h3>
-                        <p class="text-muted text-sm">
-                            Questions about how Chaptify works, thanks, or stories about where your
-                            chapters ended up playing — always welcome.
-                        </p>
                     </div>
+                    <p class="text-muted mt-2.5 text-sm">
+                        Questions about how Chaptify works, thanks, or stories about where your
+                        chapters ended up playing — always welcome.
+                    </p>
                 </div>
 
-                <div class="border-default space-y-3 border-t pt-6">
-                    <h3 class="text-highlighted font-semibold">What to expect</h3>
-                    <ul class="text-muted space-y-2 text-sm">
+                <div class="pane-quiet border-default border p-6">
+                    <p class="micro-label">What to expect</p>
+                    <ul class="text-muted mt-4 space-y-3 text-sm">
                         <li class="flex gap-3">
                             <UIcon
                                 name="i-lucide-inbox"
-                                class="text-primary mt-0.5 size-4 shrink-0" />
+                                class="text-secondary mt-0.5 size-4 shrink-0" />
                             <span>
                                 Your message goes straight to the developer's inbox — no ticket
                                 system, no autoresponder.
@@ -178,7 +177,7 @@ const sendAnother = () => {
                         <li class="flex gap-3">
                             <UIcon
                                 name="i-lucide-clock"
-                                class="text-primary mt-0.5 size-4 shrink-0" />
+                                class="text-secondary mt-0.5 size-4 shrink-0" />
                             <span>
                                 Replies usually take a few days. It's one person, sometimes out
                                 running.
@@ -187,7 +186,7 @@ const sendAnother = () => {
                         <li class="flex gap-3">
                             <UIcon
                                 name="i-lucide-shield-check"
-                                class="text-primary mt-0.5 size-4 shrink-0" />
+                                class="text-secondary mt-0.5 size-4 shrink-0" />
                             <span>
                                 Your email address is used only to reply to this message — no lists,
                                 no marketing.
@@ -197,16 +196,18 @@ const sendAnother = () => {
                 </div>
             </section>
 
-            <section aria-labelledby="contact-form-title">
-                <UCard>
-                    <template #header>
+            <section
+                class="lg:sticky lg:top-24 lg:self-start"
+                aria-labelledby="contact-form-title">
+                <div class="pane pane-front p-5 sm:p-6">
+                    <div class="mb-5">
                         <h2
                             id="contact-form-title"
-                            class="text-highlighted text-lg font-semibold">
+                            class="text-highlighted text-lg font-semibold tracking-tight">
                             Send a message
                         </h2>
-                        <p class="text-muted text-sm">All fields are required.</p>
-                    </template>
+                        <p class="data-line mt-1">All fields are required</p>
+                    </div>
 
                     <div
                         v-if="isSent"
@@ -219,8 +220,9 @@ const sendAnother = () => {
                             description="Thanks for taking the time. If a reply is needed, it will come to the address you entered." />
                         <UButton
                             type="button"
+                            class="rounded-full"
                             color="neutral"
-                            variant="soft"
+                            variant="subtle"
                             icon="i-lucide-pen-line"
                             @click="sendAnother">
                             Write another message
@@ -248,7 +250,8 @@ const sendAnother = () => {
 
                         <UFormField
                             label="Name"
-                            name="name">
+                            name="name"
+                            :ui="{label: 'micro-label'}">
                             <UInput
                                 v-model="state.name"
                                 class="w-full"
@@ -260,7 +263,8 @@ const sendAnother = () => {
                         <UFormField
                             label="Email address"
                             name="email"
-                            help="Only used to reply to this message.">
+                            help="Only used to reply to this message."
+                            :ui="{label: 'micro-label'}">
                             <UInput
                                 v-model="state.email"
                                 type="email"
@@ -272,7 +276,8 @@ const sendAnother = () => {
 
                         <UFormField
                             label="What is this about?"
-                            name="topic">
+                            name="topic"
+                            :ui="{label: 'micro-label'}">
                             <URadioGroup
                                 v-model="state.topic"
                                 :items="topicItems"
@@ -281,7 +286,8 @@ const sendAnother = () => {
 
                         <UFormField
                             label="Message"
-                            name="message">
+                            name="message"
+                            :ui="{label: 'micro-label'}">
                             <UTextarea
                                 v-model="state.message"
                                 class="w-full"
@@ -301,6 +307,7 @@ const sendAnother = () => {
 
                         <UButton
                             type="submit"
+                            class="action-pill"
                             size="lg"
                             block
                             icon="i-lucide-send"
@@ -308,7 +315,7 @@ const sendAnother = () => {
                             Send message
                         </UButton>
                     </UForm>
-                </UCard>
+                </div>
             </section>
         </div>
     </div>

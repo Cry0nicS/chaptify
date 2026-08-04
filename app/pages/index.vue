@@ -41,86 +41,172 @@ const {
     submitUpload,
     startOver
 } = useJobWorkflow();
+
+const hasJobState = computed(
+    () =>
+        Boolean(pageError.value) ||
+        Boolean(deleteError.value) ||
+        Boolean(terminalJob.value) ||
+        workflow.value.status === "queued" ||
+        workflow.value.status === "processing" ||
+        (workflow.value.status === "failed" && !workflow.value.job)
+);
+
+const layers = [
+    {
+        index: "01",
+        title: "Reads the chapter table",
+        body: "The marks are already in your file. Chaptify reads them with ffprobe and cuts exactly there — never guessed from silence, never invented.",
+        data: "ffprobe · 300 marks max"
+    },
+    {
+        index: "02",
+        title: "Cuts and packs in order",
+        body: "Every chapter becomes its own file, named so any player keeps the sequence, then archived into a single ZIP.",
+        data: "MP3 or M4B · 1.6 GB in"
+    },
+    {
+        index: "03",
+        title: "Sends one link, then forgets",
+        body: "The link arrives by email and works once you are ready for it. After twelve hours the archive and your upload are gone.",
+        data: "TTL 12 h · no account"
+    }
+];
 </script>
 
 <template>
-    <div class="mx-auto max-w-3xl py-10 sm:py-16">
-        <section class="mb-10 space-y-5">
-            <p class="text-primary font-mono text-xs tracking-[0.25em] uppercase">
-                M4B · MP3 · Embedded chapters
-            </p>
-            <h1
-                class="font-display text-highlighted text-4xl font-bold tracking-tight text-balance sm:text-6xl">
-                One audiobook in. Every chapter out.
-            </h1>
-            <p class="text-muted max-w-2xl text-base sm:text-lg">
-                Chaptify splits a single audiobook into per-chapter files, zips them, and emails you
-                a temporary download link. Built for watches and small players that choke on one big
-                file.
-            </p>
-        </section>
+    <div class="pb-16">
+        <section
+            class="grid gap-10 pt-12 pb-10 lg:grid-cols-[minmax(0,1fr)_minmax(27rem,0.9fr)] lg:gap-14 lg:pt-16">
+            <div class="lg:pt-2">
+                <h1
+                    class="font-display text-highlighted max-w-[20ch] text-4xl font-bold tracking-[-0.042em] text-balance sm:text-5xl lg:text-6xl">
+                    One audiobook,
+                    <span class="text-primary">separated</span>
+                    into every chapter it already has.
+                </h1>
 
-        <ChapterWaveform class="mb-10" />
+                <p class="text-toned mt-6 max-w-[52ch] text-base sm:text-lg">
+                    Chaptify cuts your M4B or MP3 at its embedded chapter marks, packs the parts
+                    into one archive, and emails a link that expires. No account, no library, no
+                    copy kept.
+                </p>
 
-        <div class="space-y-6">
-            <UCard>
-                <template #header>
-                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                            <h2 class="text-highlighted text-lg font-semibold">
-                                Split your audiobook
-                            </h2>
-                            <p class="text-muted text-sm">Embedded chapter metadata is required.</p>
-                        </div>
+                <dl class="border-default mt-8 flex flex-wrap gap-x-10 gap-y-5 border-t pt-6">
+                    <div>
+                        <dt class="micro-label">Accepts</dt>
+                        <dd class="text-highlighted mt-1 font-semibold">M4B · MP3</dd>
+                    </div>
+                    <div>
+                        <dt class="micro-label">Up to</dt>
+                        <dd class="text-highlighted mt-1 font-semibold">1.6 GB · 30 h</dd>
+                    </div>
+                    <div>
+                        <dt class="micro-label">Link expires</dt>
+                        <dd class="text-highlighted mt-1 font-semibold">12 h</dd>
+                    </div>
+                </dl>
+
+                <div class="pane pane-settle pane-settle-1 mt-10 p-5 sm:p-6">
+                    <div class="mb-5 flex items-center justify-between gap-4">
+                        <p class="micro-label">Chapter meter</p>
+                        <p class="data-line">5 marks · 2:43:26</p>
+                    </div>
+
+                    <ChapterWaveform hover-replay />
+
+                    <p class="border-muted text-muted mt-5 border-t pt-4 text-sm">
+                        Point at it to run the cut again. Illustration of a five-chapter file.
+                    </p>
+                </div>
+
+                <div class="pane-quiet border-default mt-5 border p-5">
+                    <p class="micro-label">What comes back</p>
+                    <div class="mt-3.5 flex flex-wrap items-center gap-1.5">
+                        <span
+                            class="bg-inverted text-inverted rounded-full px-2.5 py-1 font-mono text-[0.6875rem]">
+                            one-audiobook.m4b
+                        </span>
+                        <UIcon
+                            name="i-lucide-arrow-right"
+                            class="text-primary mx-0.5 size-3.5 shrink-0" />
+                        <span
+                            class="border-muted text-toned rounded-full border bg-white/85 px-2.5 py-1 font-mono text-[0.6875rem] dark:bg-white/10">
+                            01_chapter.mp3
+                        </span>
+                        <span
+                            class="border-muted text-toned rounded-full border bg-white/85 px-2.5 py-1 font-mono text-[0.6875rem] dark:bg-white/10">
+                            02_chapter.mp3
+                        </span>
+                        <span
+                            class="border-muted text-dimmed rounded-full border bg-white/85 px-2.5 py-1 font-mono text-[0.6875rem] dark:bg-white/10">
+                            + 3 more
+                        </span>
+                        <span
+                            class="border-primary/35 text-primary bg-primary/8 rounded-full border px-2.5 py-1 font-mono text-[0.6875rem]">
+                            chapters.zip
+                        </span>
+                    </div>
+                    <p class="text-muted mt-4 text-sm">
+                        Named in playback order, so any folder-only player keeps the sequence.
+                    </p>
+                </div>
+            </div>
+
+            <div class="lg:sticky lg:top-24 lg:self-start">
+                <div class="pane pane-front pane-settle pane-settle-2 p-5 sm:p-6">
+                    <div class="mb-5 flex items-center justify-between gap-4">
+                        <h2 class="text-highlighted text-lg font-semibold tracking-tight">
+                            Split your audiobook
+                        </h2>
                         <UBadge
                             v-if="activeJobId"
                             color="neutral"
                             variant="soft">
-                            Active job restored
+                            Job restored
                         </UBadge>
                     </div>
-                </template>
 
-                <div
-                    v-if="isRecovering"
-                    class="py-8"
-                    aria-live="polite">
-                    <UProgress animation="carousel" />
-                    <p class="text-muted mt-3 text-sm">Checking your active job...</p>
-                </div>
-
-                <AudiobookUploadForm
-                    v-else-if="showUploadForm"
-                    v-model:email="email"
-                    v-model:output-format="outputFormat"
-                    v-model:split-without-chapters="splitWithoutChapters"
-                    :file="selectedFile"
-                    :disabled="workflow.status === 'uploading'"
-                    :is-uploading="workflow.status === 'uploading'"
-                    :upload-progress-label="uploadProgress.label"
-                    :upload-progress-percent="uploadProgress.percent"
-                    @file-selected="onFileSelected"
-                    @file-removed="onFileRemoved"
-                    @submit="submitUpload" />
-
-                <div
-                    v-if="selectedFileDetails && workflow.status === 'uploading'"
-                    class="sr-only"
-                    aria-live="polite">
-                    Uploading {{ selectedFileDetails }}
-                </div>
-
-                <template #footer>
-                    <div class="text-muted space-y-2 text-sm">
-                        <p>
-                            Your audiobook is uploaded for temporary processing and is not stored
-                            permanently. The generated ZIP and download link expire after 12 hours.
-                        </p>
-                        <p>Only upload audiobooks that you own or are authorized to process.</p>
+                    <div
+                        v-if="isRecovering"
+                        class="py-6"
+                        aria-live="polite">
+                        <UProgress animation="carousel" />
+                        <p class="data-line mt-3">Checking your active job…</p>
                     </div>
-                </template>
-            </UCard>
 
+                    <AudiobookUploadForm
+                        v-else-if="showUploadForm"
+                        v-model:email="email"
+                        v-model:output-format="outputFormat"
+                        v-model:split-without-chapters="splitWithoutChapters"
+                        :file="selectedFile"
+                        :disabled="workflow.status === 'uploading'"
+                        :is-uploading="workflow.status === 'uploading'"
+                        :upload-progress-label="uploadProgress.label"
+                        :upload-progress-percent="uploadProgress.percent"
+                        @file-selected="onFileSelected"
+                        @file-removed="onFileRemoved"
+                        @submit="submitUpload" />
+
+                    <div
+                        v-if="selectedFileDetails && workflow.status === 'uploading'"
+                        class="sr-only"
+                        aria-live="polite">
+                        Uploading {{ selectedFileDetails }}
+                    </div>
+
+                    <p class="border-muted text-muted mt-5 border-t pt-4 text-sm">
+                        Your audiobook is processed, then deleted with its archive after 12 hours.
+                        Only upload audiobooks you own or are authorised to process.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <section
+            v-if="hasJobState"
+            class="mb-12 flex flex-col gap-4">
             <UAlert
                 v-if="pageError"
                 color="error"
@@ -130,9 +216,7 @@ const {
                 :description="pageError.guidance"
                 role="alert" />
 
-            <section
-                v-if="workflow.status === 'queued'"
-                class="space-y-4">
+            <template v-if="workflow.status === 'queued'">
                 <JobProgress
                     v-if="workflow.job"
                     :job="workflow.job"
@@ -142,13 +226,13 @@ const {
                     color="primary"
                     variant="soft"
                     icon="i-lucide-mail"
-                    title="Email queued for completion"
+                    title="Link queued for delivery"
                     :description="
                         maskedSubmittedEmail
-                            ? `The download link will be sent to ${maskedSubmittedEmail}.`
+                            ? `Sending to ${maskedSubmittedEmail} when the cut finishes.`
                             : 'The download link will be sent by email.'
                     " />
-            </section>
+            </template>
 
             <JobProgress
                 v-if="workflow.status === 'processing'"
@@ -182,76 +266,71 @@ const {
                 class="flex justify-start">
                 <UButton
                     type="button"
+                    class="rounded-full"
                     color="neutral"
-                    variant="soft"
+                    variant="subtle"
                     icon="i-lucide-refresh-cw"
                     @click="startOver">
                     Start over
                 </UButton>
             </div>
-        </div>
+        </section>
 
         <section
-            class="border-default mt-16 border-t pt-10"
+            class="grid gap-5 md:grid-cols-3 md:items-start"
             aria-labelledby="how-it-works">
             <h2
                 id="how-it-works"
-                class="font-display text-highlighted text-2xl font-bold tracking-tight">
+                class="sr-only">
                 How it works
             </h2>
-            <div class="mt-6 grid gap-8 sm:grid-cols-3">
-                <div class="space-y-2">
-                    <p class="text-primary font-mono text-xs tracking-widest">CH 01 · UPLOAD</p>
-                    <h3 class="text-highlighted font-semibold">One file, one email</h3>
-                    <p class="text-muted text-sm">
-                        Drop in an M4B or MP3 you own, pick the output format, and leave an email
-                        address for the download link.
-                    </p>
-                </div>
-                <div class="space-y-2">
-                    <p class="text-primary font-mono text-xs tracking-widest">CH 02 · SPLIT</p>
-                    <h3 class="text-highlighted font-semibold">Cut at every chapter</h3>
-                    <p class="text-muted text-sm">
-                        Chaptify reads the chapter marks embedded in the file and cuts the audio at
-                        each one — no guessing, no silence detection.
-                    </p>
-                </div>
-                <div class="space-y-2">
-                    <p class="text-primary font-mono text-xs tracking-widest">CH 03 · LISTEN</p>
-                    <h3 class="text-highlighted font-semibold">Sync and go</h3>
-                    <p class="text-muted text-sm">
-                        You get a ZIP of chapter files by email. Sync them to your watch or player.
-                        Link and files delete themselves after 12 hours.
-                    </p>
-                </div>
-            </div>
-            <div class="border-primary/25 bg-primary/5 mt-10 rounded-lg border p-6 sm:p-8">
-                <p class="text-primary font-mono text-xs tracking-widest">CH 04 · YOUR TURN</p>
-                <h3 class="font-display text-highlighted mt-2 text-xl font-bold tracking-tight">
-                    Help write the next chapter
+            <article
+                v-for="(layer, index) in layers"
+                :key="layer.index"
+                class="pane pane-lift p-6"
+                :class="index === 1 ? 'md:mt-8' : index === 2 ? 'md:mt-16' : ''">
+                <p class="data-line text-primary">{{ layer.index }}</p>
+                <h3
+                    class="text-highlighted mt-6 text-xl font-semibold tracking-[-0.025em] text-balance">
+                    {{ layer.title }}
                 </h3>
-                <p class="text-muted mt-2 max-w-xl text-sm">
-                    Chaptify improves through the people who use it. If a feature is missing or
-                    something didn't split the way it should, a short message steers what gets built
-                    next.
+                <p class="text-muted mt-2.5 text-sm">{{ layer.body }}</p>
+                <p class="border-muted data-line data-line-accent mt-5 border-t pt-3.5">
+                    {{ layer.data }}
                 </p>
+            </article>
+        </section>
+
+        <section
+            class="pane mt-14 grid gap-8 p-8 sm:p-10 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-center lg:gap-14">
+            <div>
+                <h2
+                    class="font-display text-highlighted max-w-[24ch] text-2xl font-bold tracking-[-0.03em] text-balance sm:text-3xl">
+                    Built for the players that refuse one long file
+                </h2>
+                <p class="text-toned mt-4 max-w-[56ch]">
+                    It started as a script for a running watch that would not play a ten-hour M4B.
+                    It runs on one machine, one job at a time, free — and it improves from the files
+                    people tell it about.
+                </p>
+            </div>
+            <div class="flex flex-col items-start gap-3">
                 <UButton
-                    class="mt-4"
+                    class="action-pill"
                     to="/contact"
-                    variant="soft"
+                    size="lg"
                     icon="i-lucide-message-square-plus">
-                    Suggest a feature or report a bug
+                    Report a file that failed
+                </UButton>
+                <UButton
+                    to="/about"
+                    color="neutral"
+                    variant="ghost"
+                    size="lg"
+                    icon="i-lucide-arrow-right">
+                    Read the story
                 </UButton>
             </div>
-
-            <p class="text-muted mt-8 text-sm">
-                Built by a marathon runner whose watch refused to play one big file.
-                <ULink
-                    class="text-primary font-medium"
-                    to="/about">
-                    Read the story
-                </ULink>
-            </p>
         </section>
     </div>
 </template>

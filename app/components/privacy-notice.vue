@@ -43,12 +43,7 @@ onMounted(() => {
             class="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-md sm:right-6 sm:bottom-6 sm:left-auto sm:mx-0 sm:max-w-sm"
             role="region"
             aria-label="Privacy notice">
-            <UCard
-                variant="subtle"
-                :ui="{
-                    root: 'border-default shadow-lg shadow-black/5 backdrop-blur',
-                    body: 'p-4'
-                }">
+            <div class="pane pane-front p-4">
                 <div class="space-y-3">
                     <div class="flex items-start gap-2.5">
                         <UIcon
@@ -74,7 +69,7 @@ onMounted(() => {
                             Privacy
                         </UButton>
                         <UButton
-                            variant="soft"
+                            class="action-pill"
                             size="sm"
                             icon="i-lucide-check"
                             @click="dismiss">
@@ -82,7 +77,7 @@ onMounted(() => {
                         </UButton>
                     </div>
                 </div>
-            </UCard>
+            </div>
         </div>
     </Transition>
 </template>

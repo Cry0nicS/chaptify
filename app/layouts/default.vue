@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import type {NavigationMenuItem} from "@nuxt/ui";
-
 const {navigationItems} = useNavItems();
+const route = useRoute();
 
-// Footer-only legal link. Rendered through UNavigationMenu (not in the shared nav items, so it
-// stays out of the header) so it matches the other footer links' styling and carries an icon.
-const footerItems: NavigationMenuItem[] = [
-    {label: "Privacy", to: "/privacy", icon: "i-lucide-shield-user"}
-];
+const isCurrent = (to?: string) => route.path === to;
 </script>
 
 <template>
     <div class="flex min-h-svh flex-col">
+        <!-- The lit field: one fixed decorative layer the whole site floats on. -->
+        <div
+            class="aurora-field"
+            aria-hidden="true">
+            <span class="aurora-blob aurora-blob-blue" />
+            <span class="aurora-blob aurora-blob-violet" />
+            <span class="aurora-blob aurora-blob-mint" />
+        </div>
+
         <NavHeader />
 
-        <UMain class="grow">
+        <UMain class="relative z-1 grow">
             <UContainer>
                 <slot />
             </UContainer>
@@ -22,13 +26,20 @@ const footerItems: NavigationMenuItem[] = [
 
         <NavFooter>
             <template #links>
-                <UNavigationMenu
-                    class="hidden md:flex"
-                    :highlight="true"
-                    :items="navigationItems" />
-                <UNavigationMenu
-                    :highlight="true"
-                    :items="footerItems" />
+                <NuxtLink
+                    v-for="item in navigationItems"
+                    :key="item.to as string"
+                    class="nav-link"
+                    :to="item.to as string"
+                    :aria-current="isCurrent(item.to as string) ? 'page' : undefined">
+                    {{ item.label }}
+                </NuxtLink>
+                <NuxtLink
+                    class="nav-link"
+                    to="/privacy"
+                    :aria-current="isCurrent('/privacy') ? 'page' : undefined">
+                    Privacy
+                </NuxtLink>
             </template>
             <template #social>
                 <NavThemeToggle />

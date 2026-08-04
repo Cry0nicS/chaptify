@@ -3,12 +3,22 @@
  * Decorative hero illustration: one continuous waveform that gets cut into labeled
  * chapter segments on load. Bar heights are hardcoded so SSR and client render the
  * same markup (no hydration mismatch, no Math.random).
+ *
+ * Colours come from `--wave-start` / `--wave-end` so a surrounding surface can retheme the
+ * illustration without touching this component; both fall back to the brand gradient.
+ *
+ * With `hover-replay`, pointing at or focusing the waveform re-runs the whole cut animation by
+ * remounting the segments. Replays are ignored while one is still playing.
  */
 interface WaveformChapter {
     label: string;
     startTime: string;
     bars: number[];
 }
+
+const props = defineProps<{
+    hoverReplay?: boolean;
+}>();
 
 const chapters: WaveformChapter[] = [
     {label: "CH 01", startTime: "0:00", bars: [32, 55, 70, 48, 62, 80, 58, 40, 66, 50]},
@@ -21,6 +31,27 @@ const chapters: WaveformChapter[] = [
     {label: "CH 04", startTime: "2:07:44", bars: [42, 68, 54, 80, 60, 36, 58, 46]},
     {label: "CH 05", startTime: "2:43:26", bars: [30, 52, 66, 44, 58, 38]}
 ];
+
+const totalBars = chapters.reduce((total, chapter) => total + chapter.bars.length, 0);
+
+// Longest delay in the sequence: the last split, plus its label fade, plus the fade's duration.
+const replayDurationMs = 900 + (chapters.length - 1) * 140 + 260 + 480;
+
+const replayKey = ref(0);
+const isReplaying = ref(false);
+
+const replay = () => {
+    if (!props.hoverReplay || isReplaying.value) {
+        return;
+    }
+
+    isReplaying.value = true;
+    replayKey.value += 1;
+
+    setTimeout(() => {
+        isReplaying.value = false;
+    }, replayDurationMs);
+};
 
 const barDelay = (chapterIndex: number, barIndex: number) => {
     const barsBefore = chapters
@@ -35,47 +66,55 @@ const splitDelay = (chapterIndex: number) => `${900 + chapterIndex * 140}ms`;
 // Signature: the book flows through the brand's blue→violet gradient as it splits — each chapter is
 // a step from azure (start) toward iris (end), mirroring the logo gradient.
 const chapterColor = (chapterIndex: number) => {
-    const azurePercent = Math.round((1 - chapterIndex / (chapters.length - 1)) * 100);
+    const startPercent = Math.round((1 - chapterIndex / (chapters.length - 1)) * 100);
 
-    return `color-mix(in oklab, var(--color-azure-500) ${azurePercent}%, var(--color-iris-500))`;
+    return `color-mix(in oklab, var(--wave-start, var(--color-azure-500)) ${startPercent}%, var(--wave-end, var(--color-iris-500)))`;
 };
 </script>
 
 <template>
     <div
-        class="waveform flex items-end"
-        aria-hidden="true">
+        class="waveform"
+        :class="hoverReplay ? 'waveform-interactive' : ''"
+        :style="{'--waveform-bar-count': totalBars}"
+        aria-hidden="true"
+        @pointerenter="replay"
+        @focusin="replay">
         <div
-            v-for="(chapter, chapterIndex) in chapters"
-            :key="chapter.label"
-            class="waveform-chapter min-w-0"
-            :class="chapterIndex > 0 ? 'waveform-chapter-split' : ''"
-            :style="{
-                'flexGrow': chapter.bars.length,
-                'flexBasis': 0,
-                '--split-delay': splitDelay(chapterIndex)
-            }">
-            <div class="flex h-16 items-end gap-px sm:h-20 sm:gap-0.5">
-                <span
-                    v-for="(bar, barIndex) in chapter.bars"
-                    :key="barIndex"
-                    class="waveform-bar min-w-0 flex-1 rounded-full"
-                    :class="chapterIndex % 2 === 0 ? 'opacity-90' : 'opacity-60'"
-                    :style="{
-                        'height': `${bar}%`,
-                        'backgroundColor': chapterColor(chapterIndex),
-                        '--bar-delay': barDelay(chapterIndex, barIndex)
-                    }" />
+            :key="replayKey"
+            class="waveform-track flex items-end">
+            <div
+                v-for="(chapter, chapterIndex) in chapters"
+                :key="chapter.label"
+                class="waveform-chapter min-w-0"
+                :class="chapterIndex > 0 ? 'waveform-chapter-split' : ''"
+                :style="{
+                    'flexGrow': chapter.bars.length,
+                    'flexBasis': 0,
+                    '--split-delay': splitDelay(chapterIndex)
+                }">
+                <div class="waveform-bars flex h-16 items-end gap-px sm:h-20 sm:gap-0.5">
+                    <span
+                        v-for="(bar, barIndex) in chapter.bars"
+                        :key="barIndex"
+                        class="waveform-bar min-w-0 flex-1 rounded-full"
+                        :class="chapterIndex % 2 === 0 ? 'opacity-90' : 'opacity-60'"
+                        :style="{
+                            'height': `${bar}%`,
+                            'backgroundColor': chapterColor(chapterIndex),
+                            '--bar-delay': barDelay(chapterIndex, barIndex)
+                        }" />
+                </div>
+                <p
+                    class="waveform-label text-dimmed mt-2 truncate font-mono text-[10px] tracking-widest sm:text-xs">
+                    {{ chapter.label }}
+                    <span
+                        v-if="chapter.bars.length >= 8"
+                        class="text-muted hidden lg:inline">
+                        · {{ chapter.startTime }}
+                    </span>
+                </p>
             </div>
-            <p
-                class="waveform-label text-dimmed mt-2 truncate font-mono text-[10px] tracking-widest sm:text-xs">
-                {{ chapter.label }}
-                <span
-                    v-if="chapter.bars.length >= 8"
-                    class="text-muted hidden lg:inline">
-                    · {{ chapter.startTime }}
-                </span>
-            </p>
         </div>
     </div>
 </template>

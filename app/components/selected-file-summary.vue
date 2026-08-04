@@ -16,7 +16,7 @@ const extension = computed(() => getAudiobookExtension(props.file.name)?.toUpper
 </script>
 
 <template>
-    <div class="border-default bg-muted/30 rounded-lg border p-4">
+    <div class="pane-quiet border-default border p-4">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">
                 <p
@@ -24,15 +24,14 @@ const extension = computed(() => getAudiobookExtension(props.file.name)?.toUpper
                     :title="file.name">
                     {{ file.name }}
                 </p>
-                <p class="text-muted mt-1 font-mono text-xs tracking-wide">
-                    {{ formatFileSize(file.size) }} · {{ extension }}
-                </p>
+                <p class="data-line mt-1">{{ formatFileSize(file.size) }} · {{ extension }}</p>
             </div>
 
             <UButton
                 type="button"
+                class="rounded-full"
                 color="neutral"
-                variant="soft"
+                variant="subtle"
                 icon="i-lucide-x"
                 :disabled="disabled"
                 @click="emit('remove')">

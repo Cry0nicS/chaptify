@@ -87,17 +87,17 @@ defineExpose({
 <template>
     <div class="space-y-3">
         <label
-            class="text-highlighted block text-sm font-medium"
+            class="micro-label block"
             for="audiobook-file">
             Audiobook file
         </label>
 
         <div
-            class="rounded-lg border border-dashed p-5 transition-colors"
+            class="rounded-2xl border border-dashed p-5 transition-colors"
             :class="
                 isDragActive
                     ? 'border-primary bg-primary/10'
-                    : 'border-default bg-default hover:bg-muted/40'
+                    : 'border-accented bg-default/50 hover:bg-default'
             "
             @dragenter.prevent="isDragActive = true"
             @dragover.prevent="isDragActive = true"
@@ -108,15 +108,16 @@ defineExpose({
                     <p class="text-highlighted font-medium">Drop one audiobook here</p>
                     <p
                         id="file-help"
-                        class="text-muted text-sm">
-                        M4B or MP3. Server upload limits apply.
+                        class="data-line">
+                        M4B or MP3 · up to 1.6 GB
                     </p>
                 </div>
 
                 <UButton
                     type="button"
+                    class="rounded-full"
                     color="neutral"
-                    variant="soft"
+                    variant="subtle"
                     icon="i-lucide-upload"
                     :disabled="disabled"
                     @click="fileInput?.click()">
