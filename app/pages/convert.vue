@@ -51,11 +51,12 @@ const hasJobState = computed(
         (workflow.value.status === "failed" && !workflow.value.job)
 );
 
-// Shown as one row of chips: what survives the re-encode.
+// One row of chips: everything the re-encode carries across untouched.
 const preserved = [
     {icon: "i-lucide-bookmark", label: "Chapters kept"},
     {icon: "i-lucide-image", label: "Cover art kept"},
-    {icon: "i-lucide-tags", label: "Tags kept"}
+    {icon: "i-lucide-tags", label: "Tags kept"},
+    {icon: "i-lucide-clock", label: "Full length"}
 ];
 
 const layers = [
@@ -113,7 +114,7 @@ const layers = [
                     </div>
                     <div>
                         <dt class="micro-label">Cost</dt>
-                        <dd class="text-highlighted mt-1 font-semibold">Free · no account</dd>
+                        <dd class="text-highlighted mt-1 font-semibold">Free</dd>
                     </div>
                 </dl>
 
@@ -134,11 +135,11 @@ const layers = [
                         </p>
                     </div>
 
-                    <ul class="border-muted mt-6 flex flex-wrap gap-2 border-t pt-5">
+                    <ul class="border-muted mt-6 flex flex-wrap gap-1.5 border-t pt-5">
                         <li
                             v-for="item in preserved"
                             :key="item.label"
-                            class="border-muted text-toned flex items-center gap-2 rounded-full border bg-white/85 px-3 py-1.5 text-sm dark:bg-white/10">
+                            class="border-muted text-toned flex items-center gap-1.5 rounded-full border bg-white/85 px-2.5 py-1.5 text-sm dark:bg-white/10">
                             <UIcon
                                 :name="item.icon"
                                 class="text-secondary size-3.5 shrink-0" />
