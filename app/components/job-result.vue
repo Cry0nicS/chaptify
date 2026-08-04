@@ -66,7 +66,7 @@ const emailMessage = computed(() => {
 </script>
 
 <template>
-    <section class="border-default bg-default space-y-4 rounded-lg border p-5">
+    <section class="pane space-y-4 p-6">
         <template v-if="deleted">
             <UAlert
                 color="neutral"
@@ -89,6 +89,7 @@ const emailMessage = computed(() => {
                 class="flex flex-col gap-3 sm:flex-row">
                 <UButton
                     type="button"
+                    class="action-pill"
                     size="lg"
                     icon="i-lucide-download"
                     :loading="isBrowserDownloadStarting"
@@ -99,9 +100,10 @@ const emailMessage = computed(() => {
                 <UButton
                     v-if="canDelete"
                     type="button"
+                    class="rounded-full"
                     size="lg"
                     color="neutral"
-                    variant="soft"
+                    variant="subtle"
                     icon="i-lucide-trash-2"
                     :loading="isDeleting"
                     @click="emit('delete')">
@@ -155,6 +157,7 @@ const emailMessage = computed(() => {
 
         <UButton
             type="button"
+            class="action-pill"
             size="lg"
             icon="i-lucide-refresh-cw"
             @click="emit('startOver')">

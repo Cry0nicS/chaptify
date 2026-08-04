@@ -2,115 +2,372 @@
 @import "@nuxt/ui";
 
 /*
- * Chaptify theme — "Night & Paper".
+ * Chaptify theme — "Aurora".
  *
- * Dark is the default: a deep violet-ink night sky for listening after dark. Light is a warm,
- * low-glare book page — never pure white. The brand's blue→violet logo gradient becomes a real
- * accent: `iris` (blue-violet) is the primary, `azure` (blue) the secondary, and the two mix into
- * the hero waveform. `dusk` is a violet-cast neutral so greys read as dusk, not concrete.
+ * The product separates one plane of audio into several, so the interface is built from planes:
+ * translucent panes floating over a pale field lit by a soft aurora of blue, violet and mint. Every
+ * surface is glass with a lit top edge and a long, low shadow; nothing is a flat card.
+ *
+ * Light ("day") is the primary scene — a bright room, mid-morning. Dark ("night") keeps the same
+ * geometry and light logic on a deep indigo ground, with the aurora burning cooler and dimmer.
  *
  * Ramps are declared with `@theme static` because Nuxt UI consumes them indirectly through its
  * --ui-color-* aliases, so Tailwind's usage detection must not tree-shake them. Surface/text/border
- * tokens are then overridden explicitly per mode (rather than derived from one neutral ramp) so the
- * warm paper and the cool ink can each be tuned on their own. Every text/surface pair clears WCAG AA.
+ * tokens are then overridden per mode so day and night can each be tuned on their own. Every
+ * text/surface pair clears WCAG AA.
+ *
+ * Component surfaces (`--ui-bg`) stay opaque so inputs, menus and dialogs remain crisp; translucency
+ * belongs to the page-level `.pane` surfaces, where the backdrop blur is controlled deliberately.
  */
 @theme static {
-    --font-sans: "Figtree", sans-serif;
-    --font-display: "Bricolage Grotesque", sans-serif;
-    --font-mono: "JetBrains Mono", monospace;
+    --font-sans: "Onest", sans-serif;
+    --font-display: "Onest", sans-serif;
+    --font-mono: "Spline Sans Mono", monospace;
 
-    /* "Iris" — primary. The blue-violet core of the logo gradient. */
-    --color-iris-50: #f1f0fe;
-    --color-iris-100: #e6e3fd;
-    --color-iris-200: #d0cbfb;
-    --color-iris-300: #b2a8f8;
-    --color-iris-400: #9f86f5;
-    --color-iris-500: #6d5cf0;
-    --color-iris-600: #5b47e0;
-    --color-iris-700: #4c39c4;
-    --color-iris-800: #3f309e;
-    --color-iris-900: #372c7c;
-    --color-iris-950: #221a4e;
+    /* "Iris" — primary. The blue-violet centre of the logo gradient; carries every action. */
+    --color-iris-50: #eef1ff;
+    --color-iris-100: #e0e5ff;
+    --color-iris-200: #c6ceff;
+    --color-iris-300: #a3aeff;
+    --color-iris-400: #7f88fb;
+    --color-iris-500: #5b5ef2;
+    --color-iris-600: #3f43e4;
+    --color-iris-700: #3335c4;
+    --color-iris-800: #2c2f9e;
+    --color-iris-900: #292b7c;
+    --color-iris-950: #1a1a4d;
 
-    /* "Azure" — secondary. The blue end of the logo gradient; pairs with iris for accents. */
-    --color-azure-50: #ecf5ff;
-    --color-azure-100: #d5e9ff;
-    --color-azure-200: #b4d8ff;
-    --color-azure-300: #82c0ff;
-    --color-azure-400: #48a2ff;
-    --color-azure-500: #1f86ff;
-    --color-azure-600: #0a6ae6;
-    --color-azure-700: #0d57bd;
-    --color-azure-800: #114a99;
-    --color-azure-900: #143f7c;
+    /* "Mint" — secondary. Reserved for measurement and data: meters, counts, timings. */
+    --color-mint-50: #e9fbf5;
+    --color-mint-100: #cef6ea;
+    --color-mint-200: #9fecd6;
+    --color-mint-300: #63dcbd;
+    --color-mint-400: #2ec6a2;
+    --color-mint-500: #12ac8a;
+    --color-mint-600: #0a8b71;
+    --color-mint-700: #0b6f5c;
+    --color-mint-800: #0d594b;
+    --color-mint-900: #0d493e;
+    --color-mint-950: #032e26;
+
+    /* "Azure" — the blue end of the logo gradient; opens the waveform ramp. */
+    --color-azure-50: #ecf6ff;
+    --color-azure-100: #d6ebff;
+    --color-azure-200: #b4dbff;
+    --color-azure-300: #82c4ff;
+    --color-azure-400: #48a6ff;
+    --color-azure-500: #1f8bff;
+    --color-azure-600: #0a6fe6;
+    --color-azure-700: #0d5abd;
+    --color-azure-800: #114b99;
+    --color-azure-900: #14407c;
     --color-azure-950: #0e274c;
 
-    /* "Dusk" — violet-cast neutral for neutral-coloured controls. */
-    --color-dusk-50: #f7f7fa;
-    --color-dusk-100: #eeedf3;
-    --color-dusk-200: #dcdae6;
-    --color-dusk-300: #bfbccf;
-    --color-dusk-400: #9a96b0;
-    --color-dusk-500: #78748f;
-    --color-dusk-600: #5f5b73;
-    --color-dusk-700: #4b475c;
-    --color-dusk-800: #343143;
-    --color-dusk-900: #221f2e;
-    --color-dusk-950: #16141f;
+    /* "Dusk" — a cool violet-grey neutral, so greys read as shadow on glass, not concrete. */
+    --color-dusk-50: #f6f7fb;
+    --color-dusk-100: #eceef6;
+    --color-dusk-200: #dadde9;
+    --color-dusk-300: #bcc0d3;
+    --color-dusk-400: #9598b3;
+    --color-dusk-500: #737791;
+    --color-dusk-600: #5b5e75;
+    --color-dusk-700: #494b5e;
+    --color-dusk-800: #333545;
+    --color-dusk-900: #21222e;
+    --color-dusk-950: #14141f;
 }
 
 /*
- * Light — "Paper". Warm, low-glare book-page surfaces with a violet-ink accent. Overrides Nuxt UI's
- * default white background and slate-derived text so nothing is pure white and the greys stay warm.
+ * Day — a bright room at mid-morning. Pale cool ground, white glass, ink-blue text.
  */
 :root {
+    --ui-radius: 0.625rem;
+
     --ui-primary: var(--color-iris-600);
-    --ui-secondary: var(--color-azure-600);
+    --ui-secondary: var(--color-mint-600);
 
-    --ui-bg: #f7f4ec;
-    --ui-bg-muted: #efe9dc;
-    --ui-bg-elevated: #fdfbf4;
-    --ui-bg-accented: #e7e0cf;
-    --ui-bg-inverted: #16141f;
+    --ui-bg: #ffffff;
+    --ui-bg-muted: #f4f6fb;
+    --ui-bg-elevated: #ffffff;
+    --ui-bg-accented: #e7ebf6;
+    --ui-bg-inverted: #141726;
 
-    --ui-text-dimmed: #837c8f;
-    --ui-text-muted: #6a6478;
-    --ui-text-toned: #514b60;
-    --ui-text: #3a3547;
-    --ui-text-highlighted: #24202b;
-    --ui-text-inverted: #f7f4ec;
+    --ui-text-dimmed: #6d7488;
+    --ui-text-muted: #545c72;
+    --ui-text-toned: #3f465a;
+    --ui-text: #333a4d;
+    --ui-text-highlighted: #111524;
+    --ui-text-inverted: #ffffff;
 
-    --ui-border: #e6dfd0;
-    --ui-border-muted: #efe9dc;
-    --ui-border-accented: #d8d0bf;
-    --ui-border-inverted: #16141f;
+    --ui-border: rgb(17 21 36 / 0.14);
+    --ui-border-muted: rgb(17 21 36 / 0.08);
+    --ui-border-accented: rgb(17 21 36 / 0.24);
+    --ui-border-inverted: #141726;
+
+    /* The field behind everything, and the glass on top of it. */
+    --field: #eef1f8;
+    --aurora-blue: rgb(103 138 255 / 0.55);
+    --aurora-violet: rgb(168 132 255 / 0.42);
+    --aurora-mint: rgb(66 219 190 / 0.3);
+
+    --pane-bg: rgb(255 255 255 / 0.66);
+    --pane-bg-quiet: rgb(255 255 255 / 0.42);
+    --pane-border: rgb(255 255 255 / 0.85);
+    --pane-highlight: rgb(255 255 255 / 0.9);
+    --pane-shadow: 0 30px 60px -34px rgb(17 21 36 / 0.4);
+    --pane-shadow-lifted: 0 44px 80px -40px rgb(17 21 36 / 0.5);
+
+    /* Waveform ramp: azure into mint, the file opening out across its chapters. */
+    --wave-start: #3f6bff;
+    --wave-end: #17bfa5;
 }
 
 /*
- * Dark (default) — "Night". A deep violet-ink sky; the primary listening mode. Alias colours lift to
- * the 400 shade for contrast on the dark ground.
+ * Night — the same room after dark. Deep indigo ground, dim aurora, glass lit from above.
  */
 .dark {
     --ui-primary: var(--color-iris-400);
-    --ui-secondary: var(--color-azure-400);
+    --ui-secondary: var(--color-mint-300);
 
-    --ui-bg: #131120;
-    --ui-bg-muted: #1a1826;
-    --ui-bg-elevated: #201d2e;
-    --ui-bg-accented: #2a2740;
-    --ui-bg-inverted: #f7f4ec;
+    --ui-bg: #151a2b;
+    --ui-bg-muted: #121627;
+    --ui-bg-elevated: #1b2136;
+    --ui-bg-accented: #232a45;
+    --ui-bg-inverted: #eef1f8;
 
-    --ui-text-dimmed: #6d6886;
-    --ui-text-muted: #948fac;
-    --ui-text-toned: #b3aecb;
-    --ui-text: #d7d3e6;
-    --ui-text-highlighted: #f5f3fb;
-    --ui-text-inverted: #131120;
+    --ui-text-dimmed: #7b83a3;
+    --ui-text-muted: #9aa2c0;
+    --ui-text-toned: #b8bfd8;
+    --ui-text: #cfd5ea;
+    --ui-text-highlighted: #f3f5ff;
+    --ui-text-inverted: #0b0d1a;
 
-    --ui-border: #2a2740;
-    --ui-border-muted: #201d2e;
-    --ui-border-accented: #383350;
-    --ui-border-inverted: #f7f4ec;
+    --ui-border: rgb(255 255 255 / 0.12);
+    --ui-border-muted: rgb(255 255 255 / 0.07);
+    --ui-border-accented: rgb(255 255 255 / 0.2);
+    --ui-border-inverted: #eef1f8;
+
+    --field: #0b0d1a;
+    --aurora-blue: rgb(59 58 224 / 0.42);
+    --aurora-violet: rgb(122 60 224 / 0.32);
+    --aurora-mint: rgb(14 143 125 / 0.28);
+
+    --pane-bg: rgb(255 255 255 / 0.055);
+    --pane-bg-quiet: rgb(255 255 255 / 0.03);
+    --pane-border: rgb(255 255 255 / 0.12);
+    --pane-highlight: rgb(255 255 255 / 0.16);
+    --pane-shadow: 0 30px 60px -34px rgb(0 0 0 / 0.7);
+    --pane-shadow-lifted: 0 44px 80px -40px rgb(0 0 0 / 0.8);
+
+    --wave-start: #7f9dff;
+    --wave-end: #46dfc2;
+}
+
+html,
+body {
+    background-color: var(--field);
+}
+
+/* ---------------------------------------------------------------------------
+ * The lit field. One fixed layer behind the whole site: the ground colour plus
+ * three soft aurora lights. Decorative and inert.
+ * ------------------------------------------------------------------------- */
+.aurora-field {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.aurora-blob {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(80px);
+}
+
+.aurora-blob-blue {
+    width: 46rem;
+    height: 34rem;
+    top: -10rem;
+    left: -8rem;
+    background: radial-gradient(circle, var(--aurora-blue), transparent 68%);
+}
+
+.aurora-blob-violet {
+    width: 40rem;
+    height: 30rem;
+    top: 10%;
+    right: -12rem;
+    background: radial-gradient(circle, var(--aurora-violet), transparent 68%);
+}
+
+.aurora-blob-mint {
+    width: 54rem;
+    height: 38rem;
+    bottom: -14rem;
+    left: 14%;
+    background: radial-gradient(circle, var(--aurora-mint), transparent 72%);
+}
+
+/* ---------------------------------------------------------------------------
+ * Panes. The only page-level surface: glass, a lit top edge, a long low shadow.
+ * ------------------------------------------------------------------------- */
+.pane {
+    position: relative;
+    border: 1px solid var(--pane-border);
+    border-radius: 1.5rem;
+    background: var(--pane-bg);
+    backdrop-filter: blur(26px) saturate(150%);
+    box-shadow:
+        inset 0 1px 0 0 var(--pane-highlight),
+        var(--pane-shadow);
+}
+
+.pane-quiet {
+    border-radius: 1.25rem;
+    background: var(--pane-bg-quiet);
+    backdrop-filter: blur(18px) saturate(140%);
+}
+
+/* A pane that reads as an ornament rather than a panel: the header, pills, chips. */
+.pane-pill {
+    border-radius: 9999px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Navigation. Links are quiet until hovered; the current page wears the ink pill.
+ * ------------------------------------------------------------------------- */
+.nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--ui-text-muted);
+    transition:
+        background-color 180ms ease,
+        color 180ms ease;
+}
+
+@media (hover: hover) {
+    .nav-link:hover {
+        background: var(--pane-bg);
+        color: var(--ui-text-highlighted);
+    }
+}
+
+.nav-link-active {
+    background: var(--ui-bg-inverted);
+    color: var(--ui-text-inverted);
+}
+
+@media (hover: hover) {
+    .nav-link-active:hover {
+        background: var(--ui-bg-inverted);
+        color: var(--ui-text-inverted);
+    }
+}
+
+.pane-front {
+    box-shadow:
+        inset 0 1px 0 0 var(--pane-highlight),
+        var(--pane-shadow-lifted);
+}
+
+.pane-lift {
+    transition:
+        transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+        box-shadow 260ms ease;
+}
+
+@media (hover: hover) {
+    .pane-lift:hover {
+        transform: translateY(-6px);
+        box-shadow:
+            inset 0 1px 0 0 var(--pane-highlight),
+            var(--pane-shadow-lifted);
+    }
+}
+
+/* Panes settle in from depth once, on load. */
+@media (prefers-reduced-motion: no-preference) {
+    .pane-settle {
+        animation: pane-settle 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    .pane-settle-1 {
+        animation-delay: 120ms;
+    }
+
+    .pane-settle-2 {
+        animation-delay: 240ms;
+    }
+}
+
+@keyframes pane-settle {
+    from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.985);
+        filter: blur(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0);
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * Type roles beyond the Tailwind scale. `.micro-label` names a field or region;
+ * `.data-line` carries measurements.
+ * ------------------------------------------------------------------------- */
+.micro-label {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    line-height: 1.4;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ui-text-muted);
+}
+
+.data-line {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+    color: var(--ui-text-muted);
+}
+
+.data-line-accent {
+    color: var(--ui-secondary);
+}
+
+/* Primary actions are pills with a coloured lift; the shape is the brand's tell. */
+.action-pill {
+    border-radius: 9999px !important;
+    box-shadow:
+        inset 0 1px 0 0 rgb(255 255 255 / 0.25),
+        0 14px 26px -12px color-mix(in srgb, var(--ui-primary) 60%, transparent);
+    transition:
+        transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+        box-shadow 200ms ease;
+}
+
+@media (hover: hover) {
+    .action-pill:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow:
+            inset 0 1px 0 0 rgb(255 255 255 / 0.3),
+            0 20px 34px -14px color-mix(in srgb, var(--ui-primary) 65%, transparent);
+    }
+}
+
+.action-pill:disabled {
+    box-shadow: none;
 }
 
 /* Text selection carries the brand violet in both modes. */

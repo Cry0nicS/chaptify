@@ -67,7 +67,7 @@ const canSubmit = computed(
             @file-removed="emit('fileRemoved')" />
 
         <div class="space-y-2">
-            <span class="text-highlighted block text-sm font-medium">Output format</span>
+            <span class="micro-label block">Output format</span>
             <URadioGroup
                 :model-value="outputFormat"
                 :items="outputFormatItems"
@@ -83,11 +83,11 @@ const canSubmit = computed(
             </p>
         </div>
 
-        <div class="border-default bg-muted/30 rounded-lg border p-4">
+        <div class="pane-quiet border-default border p-4">
             <div class="flex items-start justify-between gap-4">
                 <div class="space-y-1">
                     <label
-                        class="text-highlighted block text-sm font-medium"
+                        class="text-highlighted block font-medium"
                         for="split-without-chapters">
                         No chapters? Split into 30-minute parts
                     </label>
@@ -109,7 +109,7 @@ const canSubmit = computed(
 
         <div class="space-y-2">
             <label
-                class="text-highlighted block text-sm font-medium"
+                class="micro-label block"
                 for="email">
                 Email address
             </label>
@@ -140,13 +140,11 @@ const canSubmit = computed(
 
         <div
             v-if="isUploading"
-            class="border-default bg-muted/30 space-y-3 rounded-lg border p-4"
+            class="pane-quiet border-default space-y-3 border p-4"
             aria-live="polite">
             <div class="flex items-center justify-between gap-4">
                 <p class="text-highlighted text-sm font-medium">Uploading audiobook</p>
-                <p class="text-muted font-mono text-sm tabular-nums">
-                    {{ uploadProgressPercent }}%
-                </p>
+                <p class="data-line data-line-accent text-sm">{{ uploadProgressPercent }}%</p>
             </div>
             <UProgress
                 :model-value="uploadProgressPercent"
@@ -160,6 +158,7 @@ const canSubmit = computed(
 
         <UButton
             type="submit"
+            class="action-pill"
             size="xl"
             block
             icon="i-lucide-scissors"

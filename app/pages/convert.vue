@@ -40,83 +40,171 @@ const {
     submitUpload,
     startOver
 } = useConversionWorkflow();
+
+const hasJobState = computed(
+    () =>
+        Boolean(pageError.value) ||
+        Boolean(deleteError.value) ||
+        Boolean(terminalJob.value) ||
+        workflow.value.status === "queued" ||
+        workflow.value.status === "processing" ||
+        (workflow.value.status === "failed" && !workflow.value.job)
+);
+
+const preserved = [
+    {icon: "i-lucide-bookmark", label: "Embedded chapters"},
+    {icon: "i-lucide-image", label: "Cover art"},
+    {icon: "i-lucide-tags", label: "Title, author and tags"}
+];
+
+const layers = [
+    {
+        index: "01",
+        title: "One file, one address",
+        body: "Drop in the MP3 or M4B you own and pick the container you need. Songs and clips work too — no chapter marks required.",
+        data: "MP3 ⇄ M4B · 1.6 GB in"
+    },
+    {
+        index: "02",
+        title: "A faithful re-encode",
+        body: "MP3 and M4B never share a codec, so the audio is always re-encoded — but chapters, cover art and tags are carried across, not stripped.",
+        data: "ffmpeg · metadata kept"
+    },
+    {
+        index: "03",
+        title: "Grab it, then delete it",
+        body: "Download from this tab or the email. Press delete when you have it, or leave it and the file removes itself.",
+        data: "TTL 12 h · delete on demand"
+    }
+];
 </script>
 
 <template>
-    <div class="mx-auto max-w-3xl py-10 sm:py-16">
-        <section class="mb-10 space-y-5">
-            <p class="text-primary font-mono text-xs tracking-[0.25em] uppercase">
-                MP3 ⇄ M4B · Keeps chapters & cover art
-            </p>
-            <h1
-                class="font-display text-highlighted text-4xl font-bold tracking-tight text-balance sm:text-6xl">
-                Convert audiobooks between MP3 and M4B.
-            </h1>
-            <p class="text-muted max-w-2xl text-base sm:text-lg">
-                Upload one audiobook and get it back in the other format — chapters, cover art, and
-                metadata preserved. The download link is emailed and expires after 12 hours.
-            </p>
-        </section>
+    <div class="pb-16">
+        <section
+            class="grid gap-10 pt-12 pb-10 lg:grid-cols-[minmax(0,1fr)_minmax(27rem,0.9fr)] lg:gap-14 lg:pt-16">
+            <div class="lg:pt-2">
+                <h1
+                    class="font-display text-highlighted max-w-[20ch] text-4xl font-bold tracking-[-0.042em] text-balance sm:text-5xl lg:text-6xl">
+                    Convert an audiobook
+                    <span class="text-primary">between</span>
+                    MP3 and M4B.
+                </h1>
 
-        <div class="space-y-6">
-            <UCard>
-                <template #header>
-                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                            <h2 class="text-highlighted text-lg font-semibold">
-                                Convert your audiobook
-                            </h2>
-                            <p class="text-muted text-sm">
-                                MP3 to M4B or M4B to MP3. Works for songs and clips too.
-                            </p>
-                        </div>
+                <p class="text-toned mt-6 max-w-[52ch] text-base sm:text-lg">
+                    Upload one file and get it back in the other container — chapters, cover art and
+                    metadata preserved. The download link is emailed and expires after 12 hours.
+                </p>
+
+                <dl class="border-default mt-8 flex flex-wrap gap-x-10 gap-y-5 border-t pt-6">
+                    <div>
+                        <dt class="micro-label">Accepts</dt>
+                        <dd class="text-highlighted mt-1 font-semibold">M4B · MP3</dd>
+                    </div>
+                    <div>
+                        <dt class="micro-label">Up to</dt>
+                        <dd class="text-highlighted mt-1 font-semibold">1.6 GB · 30 h</dd>
+                    </div>
+                    <div>
+                        <dt class="micro-label">Chapters needed</dt>
+                        <dd class="text-highlighted mt-1 font-semibold">No</dd>
+                    </div>
+                </dl>
+
+                <div class="pane pane-settle pane-settle-1 mt-10 p-5 sm:p-6">
+                    <p class="micro-label">The swap</p>
+
+                    <div class="mt-5 flex items-center justify-center gap-4 sm:gap-7">
+                        <p
+                            class="text-highlighted font-display text-3xl font-bold tracking-tight sm:text-4xl">
+                            MP3
+                        </p>
+                        <UIcon
+                            name="i-lucide-repeat"
+                            class="text-primary size-6 shrink-0 sm:size-7" />
+                        <p
+                            class="text-highlighted font-display text-3xl font-bold tracking-tight sm:text-4xl">
+                            M4B
+                        </p>
+                    </div>
+
+                    <ul class="border-muted mt-6 grid gap-3 border-t pt-5">
+                        <li
+                            v-for="item in preserved"
+                            :key="item.label"
+                            class="flex items-center gap-3">
+                            <UIcon
+                                :name="item.icon"
+                                class="text-secondary size-4 shrink-0" />
+                            <span class="text-toned text-sm">{{ item.label }}</span>
+                            <span class="data-line data-line-accent ml-auto">kept</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <p class="text-muted mt-5 text-sm">
+                    Need per-chapter files instead of one converted file?
+                    <ULink
+                        class="text-primary font-medium"
+                        to="/">
+                        Split the audiobook
+                    </ULink>
+                </p>
+            </div>
+
+            <div class="lg:sticky lg:top-24 lg:self-start">
+                <div class="pane pane-front pane-settle pane-settle-2 p-5 sm:p-6">
+                    <div class="mb-5 flex items-center justify-between gap-4">
+                        <h2 class="text-highlighted text-lg font-semibold tracking-tight">
+                            Convert your audiobook
+                        </h2>
                         <UBadge
                             v-if="activeJobId"
                             color="neutral"
                             variant="soft">
-                            Active job restored
+                            Job restored
                         </UBadge>
                     </div>
-                </template>
 
-                <div
-                    v-if="isRecovering"
-                    class="text-muted text-sm">
-                    <p class="mt-3">Checking your active job...</p>
-                </div>
-
-                <ConversionUploadForm
-                    v-else-if="showUploadForm"
-                    v-model:email="email"
-                    v-model:output-format="outputFormat"
-                    :file="selectedFile"
-                    :disabled="workflow.status === 'uploading'"
-                    :is-uploading="workflow.status === 'uploading'"
-                    :upload-progress-label="uploadProgress.label"
-                    :upload-progress-percent="uploadProgress.percent"
-                    @file-selected="onFileSelected"
-                    @file-removed="onFileRemoved"
-                    @submit="submitUpload" />
-
-                <div
-                    v-if="selectedFileDetails && workflow.status === 'uploading'"
-                    class="sr-only"
-                    aria-live="polite">
-                    Uploading {{ selectedFileDetails }}
-                </div>
-
-                <template #footer>
-                    <div class="text-muted space-y-2 text-sm">
-                        <p>
-                            Your file is uploaded for temporary processing and is not stored
-                            permanently. The converted file and download link expire after 12 hours,
-                            or you can delete it yourself once it is ready.
-                        </p>
-                        <p>Only upload audio that you own or are authorized to convert.</p>
+                    <div
+                        v-if="isRecovering"
+                        class="py-6"
+                        aria-live="polite">
+                        <UProgress animation="carousel" />
+                        <p class="data-line mt-3">Checking your active job…</p>
                     </div>
-                </template>
-            </UCard>
 
+                    <ConversionUploadForm
+                        v-else-if="showUploadForm"
+                        v-model:email="email"
+                        v-model:output-format="outputFormat"
+                        :file="selectedFile"
+                        :disabled="workflow.status === 'uploading'"
+                        :is-uploading="workflow.status === 'uploading'"
+                        :upload-progress-label="uploadProgress.label"
+                        :upload-progress-percent="uploadProgress.percent"
+                        @file-selected="onFileSelected"
+                        @file-removed="onFileRemoved"
+                        @submit="submitUpload" />
+
+                    <div
+                        v-if="selectedFileDetails && workflow.status === 'uploading'"
+                        class="sr-only"
+                        aria-live="polite">
+                        Uploading {{ selectedFileDetails }}
+                    </div>
+
+                    <p class="border-muted text-muted mt-5 border-t pt-4 text-sm">
+                        Your file is processed, then deleted with its result after 12 hours. Only
+                        upload audio you own or are authorised to convert.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <section
+            v-if="hasJobState"
+            class="mb-12 flex flex-col gap-4">
             <UAlert
                 v-if="pageError"
                 color="error"
@@ -126,9 +214,7 @@ const {
                 :description="pageError.guidance"
                 role="alert" />
 
-            <section
-                v-if="workflow.status === 'queued'"
-                class="space-y-4">
+            <template v-if="workflow.status === 'queued'">
                 <JobProgress
                     v-if="workflow.job"
                     :job="workflow.job"
@@ -138,13 +224,13 @@ const {
                     color="primary"
                     variant="soft"
                     icon="i-lucide-mail"
-                    title="Email queued for completion"
+                    title="Link queued for delivery"
                     :description="
                         maskedSubmittedEmail
-                            ? `The download link will be sent to ${maskedSubmittedEmail}.`
+                            ? `Sending to ${maskedSubmittedEmail} when the conversion finishes.`
                             : 'The download link will be sent by email.'
                     " />
-            </section>
+            </template>
 
             <JobProgress
                 v-if="workflow.status === 'processing'"
@@ -179,47 +265,39 @@ const {
                 class="flex justify-start">
                 <UButton
                     type="button"
+                    class="rounded-full"
                     color="neutral"
-                    variant="soft"
+                    variant="subtle"
                     icon="i-lucide-refresh-cw"
                     @click="startOver">
                     Start over
                 </UButton>
             </div>
-        </div>
+        </section>
 
         <section
-            class="border-default mt-16 border-t pt-10"
+            class="grid gap-5 md:grid-cols-3 md:items-start"
             aria-labelledby="convert-how">
             <h2
                 id="convert-how"
-                class="font-display text-highlighted text-2xl font-bold tracking-tight">
+                class="sr-only">
                 How it works
             </h2>
-            <div class="mt-6 grid gap-8 sm:grid-cols-3">
-                <div class="space-y-2">
-                    <p class="text-primary font-mono text-xs tracking-widest">01 · UPLOAD</p>
-                    <h3 class="text-highlighted font-semibold">One file, one email</h3>
-                    <p class="text-muted text-sm">
-                        Drop in an MP3 or M4B you own and pick the target format.
-                    </p>
-                </div>
-                <div class="space-y-2">
-                    <p class="text-primary font-mono text-xs tracking-widest">02 · CONVERT</p>
-                    <h3 class="text-highlighted font-semibold">Faithful re-encode</h3>
-                    <p class="text-muted text-sm">
-                        Chaptify transcodes the audio while preserving chapters, cover art, and
-                        tags.
-                    </p>
-                </div>
-                <div class="space-y-2">
-                    <p class="text-primary font-mono text-xs tracking-widest">03 · DOWNLOAD</p>
-                    <h3 class="text-highlighted font-semibold">Grab it, then delete</h3>
-                    <p class="text-muted text-sm">
-                        Download the converted file here or from the email, and delete it when done.
-                    </p>
-                </div>
-            </div>
+            <article
+                v-for="(layer, index) in layers"
+                :key="layer.index"
+                class="pane pane-lift p-6"
+                :class="index === 1 ? 'md:mt-8' : index === 2 ? 'md:mt-16' : ''">
+                <p class="data-line text-primary">{{ layer.index }}</p>
+                <h3
+                    class="text-highlighted mt-6 text-xl font-semibold tracking-[-0.025em] text-balance">
+                    {{ layer.title }}
+                </h3>
+                <p class="text-muted mt-2.5 text-sm">{{ layer.body }}</p>
+                <p class="border-muted data-line data-line-accent mt-5 border-t pt-3.5">
+                    {{ layer.data }}
+                </p>
+            </article>
         </section>
     </div>
 </template>

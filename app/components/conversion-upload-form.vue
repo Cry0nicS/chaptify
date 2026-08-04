@@ -71,7 +71,7 @@ const canSubmit = computed(
             @file-removed="emit('fileRemoved')" />
 
         <div class="space-y-2">
-            <span class="text-highlighted block text-sm font-medium">Convert to</span>
+            <span class="micro-label block">Convert to</span>
             <URadioGroup
                 :model-value="outputFormat"
                 :items="outputFormatItems"
@@ -88,7 +88,7 @@ const canSubmit = computed(
 
         <div class="space-y-2">
             <label
-                class="text-highlighted block text-sm font-medium"
+                class="micro-label block"
                 for="convert-email">
                 Email address
             </label>
@@ -120,13 +120,11 @@ const canSubmit = computed(
 
         <div
             v-if="isUploading"
-            class="border-default bg-muted/30 space-y-3 rounded-lg border p-4"
+            class="pane-quiet border-default space-y-3 border p-4"
             aria-live="polite">
             <div class="flex items-center justify-between gap-4">
                 <p class="text-highlighted text-sm font-medium">Uploading file</p>
-                <p class="text-muted font-mono text-sm tabular-nums">
-                    {{ uploadProgressPercent }}%
-                </p>
+                <p class="data-line data-line-accent text-sm">{{ uploadProgressPercent }}%</p>
             </div>
             <UProgress
                 :model-value="uploadProgressPercent"
@@ -140,6 +138,7 @@ const canSubmit = computed(
 
         <UButton
             type="submit"
+            class="action-pill"
             size="xl"
             block
             icon="i-lucide-repeat"
