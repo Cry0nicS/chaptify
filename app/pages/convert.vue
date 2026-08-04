@@ -51,10 +51,11 @@ const hasJobState = computed(
         (workflow.value.status === "failed" && !workflow.value.job)
 );
 
+// Shown as one row of chips: what survives the re-encode.
 const preserved = [
-    {icon: "i-lucide-bookmark", label: "Embedded chapters"},
-    {icon: "i-lucide-image", label: "Cover art"},
-    {icon: "i-lucide-tags", label: "Title, author and tags"}
+    {icon: "i-lucide-bookmark", label: "Chapters kept"},
+    {icon: "i-lucide-image", label: "Cover art kept"},
+    {icon: "i-lucide-tags", label: "Tags kept"}
 ];
 
 const layers = [
@@ -128,28 +129,27 @@ const layers = [
                         </p>
                     </div>
 
-                    <ul class="border-muted mt-6 grid gap-3 border-t pt-5">
+                    <ul class="border-muted mt-6 flex flex-wrap gap-2 border-t pt-5">
                         <li
                             v-for="item in preserved"
                             :key="item.label"
-                            class="flex items-center gap-3">
+                            class="border-muted text-toned flex items-center gap-2 rounded-full border bg-white/85 px-3 py-1.5 text-sm dark:bg-white/10">
                             <UIcon
                                 :name="item.icon"
-                                class="text-secondary size-4 shrink-0" />
-                            <span class="text-toned text-sm">{{ item.label }}</span>
-                            <span class="data-line data-line-accent ml-auto">kept</span>
+                                class="text-secondary size-3.5 shrink-0" />
+                            {{ item.label }}
                         </li>
                     </ul>
-                </div>
 
-                <p class="text-muted mt-5 text-sm">
-                    Need per-chapter files instead of one converted file?
-                    <ULink
-                        class="text-primary font-medium"
-                        to="/">
-                        Split the audiobook
-                    </ULink>
-                </p>
+                    <p class="border-muted text-muted mt-5 border-t pt-4 text-sm">
+                        Need per-chapter files instead of one converted file?
+                        <ULink
+                            class="text-primary font-medium"
+                            to="/">
+                            Split the audiobook
+                        </ULink>
+                    </p>
+                </div>
             </div>
 
             <div class="lg:sticky lg:top-24 lg:self-start">
@@ -287,7 +287,7 @@ const layers = [
                 v-for="(layer, index) in layers"
                 :key="layer.index"
                 class="pane pane-lift p-6"
-                :class="index === 1 ? 'md:mt-8' : index === 2 ? 'md:mt-16' : ''">
+                :class="index === 0 ? 'md:mt-16' : index === 1 ? 'md:mt-8' : ''">
                 <p class="data-line text-primary">{{ layer.index }}</p>
                 <h3
                     class="text-highlighted mt-6 text-xl font-semibold tracking-[-0.025em] text-balance">
