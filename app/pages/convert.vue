@@ -97,7 +97,8 @@ const layers = [
                     metadata preserved. The download link is emailed and expires after 12 hours.
                 </p>
 
-                <dl class="border-default mt-8 flex flex-wrap gap-x-10 gap-y-5 border-t pt-6">
+                <dl
+                    class="border-default mt-8 grid grid-cols-2 gap-x-8 gap-y-5 border-t pt-6 sm:flex sm:flex-wrap sm:gap-x-10">
                     <div>
                         <dt class="micro-label">Accepts</dt>
                         <dd class="text-highlighted mt-1 font-semibold">M4B · MP3</dd>
@@ -109,6 +110,10 @@ const layers = [
                     <div>
                         <dt class="micro-label">Chapters needed</dt>
                         <dd class="text-highlighted mt-1 font-semibold">No</dd>
+                    </div>
+                    <div>
+                        <dt class="micro-label">Cost</dt>
+                        <dd class="text-highlighted mt-1 font-semibold">Free · no account</dd>
                     </div>
                 </dl>
 
