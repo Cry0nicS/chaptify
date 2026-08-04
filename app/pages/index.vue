@@ -115,41 +115,41 @@ const layers = [
 
                     <ChapterWaveform hover-replay />
 
-                    <p class="border-muted text-muted mt-5 border-t pt-4 text-sm">
-                        Point at it to run the cut again. Illustration of a five-chapter file.
-                    </p>
-                </div>
-
-                <div class="pane-quiet border-default mt-5 border p-5">
-                    <p class="micro-label">What comes back</p>
-                    <div class="mt-3.5 flex flex-wrap items-center gap-1.5">
-                        <span
-                            class="bg-inverted text-inverted rounded-full px-2.5 py-1 font-mono text-[0.6875rem]">
-                            one-audiobook.m4b
-                        </span>
-                        <UIcon
-                            name="i-lucide-arrow-right"
-                            class="text-primary mx-0.5 size-3.5 shrink-0" />
-                        <span
-                            class="border-muted text-toned rounded-full border bg-white/85 px-2.5 py-1 font-mono text-[0.6875rem] dark:bg-white/10">
-                            01_chapter.mp3
-                        </span>
-                        <span
-                            class="border-muted text-toned rounded-full border bg-white/85 px-2.5 py-1 font-mono text-[0.6875rem] dark:bg-white/10">
-                            02_chapter.mp3
-                        </span>
-                        <span
-                            class="border-muted text-dimmed rounded-full border bg-white/85 px-2.5 py-1 font-mono text-[0.6875rem] dark:bg-white/10">
-                            + 3 more
-                        </span>
-                        <span
-                            class="border-primary/35 text-primary bg-primary/8 rounded-full border px-2.5 py-1 font-mono text-[0.6875rem]">
-                            chapters.zip
-                        </span>
-                    </div>
                     <p class="text-muted mt-4 text-sm">
-                        Named in playback order, so any folder-only player keeps the sequence.
+                        Point at it to run the cut again — an illustration of a five-chapter file.
                     </p>
+
+                    <div class="border-muted mt-5 border-t pt-5">
+                        <p class="micro-label">What comes back</p>
+                        <div class="mt-3.5 flex flex-wrap items-center gap-1.5">
+                            <span
+                                class="bg-inverted text-inverted rounded-full px-2.5 py-1 font-mono text-[0.6875rem]">
+                                one-audiobook.m4b
+                            </span>
+                            <UIcon
+                                name="i-lucide-arrow-right"
+                                class="text-primary mx-0.5 size-3.5 shrink-0" />
+                            <span
+                                class="border-muted text-toned rounded-full border bg-white/85 px-2.5 py-1 font-mono text-[0.6875rem] dark:bg-white/10">
+                                01_chapter.mp3
+                            </span>
+                            <span
+                                class="border-muted text-toned rounded-full border bg-white/85 px-2.5 py-1 font-mono text-[0.6875rem] dark:bg-white/10">
+                                02_chapter.mp3
+                            </span>
+                            <span
+                                class="border-muted text-dimmed rounded-full border bg-white/85 px-2.5 py-1 font-mono text-[0.6875rem] dark:bg-white/10">
+                                + 3 more
+                            </span>
+                            <span
+                                class="border-primary/35 text-primary bg-primary/8 rounded-full border px-2.5 py-1 font-mono text-[0.6875rem]">
+                                chapters.zip
+                            </span>
+                        </div>
+                        <p class="text-muted mt-4 text-sm">
+                            Named in playback order, so any folder-only player keeps the sequence.
+                        </p>
+                    </div>
                 </div>
             </div>
 
@@ -288,7 +288,7 @@ const layers = [
                 v-for="(layer, index) in layers"
                 :key="layer.index"
                 class="pane pane-lift p-6"
-                :class="index === 1 ? 'md:mt-8' : index === 2 ? 'md:mt-16' : ''">
+                :class="index === 0 ? 'md:mt-16' : index === 1 ? 'md:mt-8' : ''">
                 <p class="data-line text-primary">{{ layer.index }}</p>
                 <h3
                     class="text-highlighted mt-6 text-xl font-semibold tracking-[-0.025em] text-balance">
