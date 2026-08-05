@@ -1,5 +1,8 @@
 <script setup lang="ts">
-const {navigationItems} = useNavItems();
+const {navigationItems, legalItems} = useNavItems();
+
+// The footer carries the legal link alongside the main ones.
+const footerItems = computed(() => [...navigationItems.value, ...legalItems.value]);
 const route = useRoute();
 
 const isCurrent = (to?: string) => route.path === to;
@@ -27,18 +30,12 @@ const isCurrent = (to?: string) => route.path === to;
         <NavFooter>
             <template #links>
                 <NuxtLink
-                    v-for="item in navigationItems"
+                    v-for="item in footerItems"
                     :key="item.to as string"
                     class="nav-link"
                     :to="item.to as string"
                     :aria-current="isCurrent(item.to as string) ? 'page' : undefined">
                     {{ item.label }}
-                </NuxtLink>
-                <NuxtLink
-                    class="nav-link"
-                    to="/privacy"
-                    :aria-current="isCurrent('/privacy') ? 'page' : undefined">
-                    Privacy
                 </NuxtLink>
             </template>
             <template #social>

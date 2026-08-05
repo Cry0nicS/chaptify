@@ -6,12 +6,17 @@ import {useNavItems} from "~/composables/use-nav-items";
  * so it is hand-built from the pane material — but every control inside it is a Nuxt UI component.
  *
  * Below `sm` the links do not fit the pill, so they move into a slide-over sheet (focus trap, escape
- * and scroll locking come from `USlideover`) which closes itself on navigation.
+ * and scroll locking come from `USlideover`). The sheet closes when a link is selected — including
+ * the link for the page already open, which produces no route change — and the route watcher covers
+ * navigation that happens without a tap, such as browser back while the sheet is open.
  */
-const {navigationItems} = useNavItems();
+const {navigationItems, legalItems} = useNavItems();
 const route = useRoute();
 
 const isMenuOpen = ref(false);
+
+// The sheet lists the legal link too; the desktop pill deliberately does not.
+const menuItems = computed(() => [...navigationItems.value, ...legalItems.value]);
 
 const isCurrent = (to?: string) => route.path === to;
 
@@ -19,12 +24,11 @@ const openMenu = () => {
     isMenuOpen.value = true;
 };
 
-watch(
-    () => route.fullPath,
-    () => {
-        isMenuOpen.value = false;
-    }
-);
+const closeMenu = () => {
+    isMenuOpen.value = false;
+};
+
+watch(() => route.fullPath, closeMenu);
 </script>
 
 <template>
@@ -74,7 +78,7 @@ watch(
                     class="flex flex-col gap-1"
                     aria-label="Main">
                     <NuxtLink
-                        v-for="item in navigationItems"
+                        v-for="item in menuItems"
                         :key="item.to as string"
                         class="hover:bg-elevated flex items-center gap-3 rounded-xl px-3 py-3 text-lg font-medium transition-colors"
                         :class="
@@ -83,20 +87,12 @@ watch(
                                 : 'text-toned'
                         "
                         :to="item.to as string"
-                        :aria-current="isCurrent(item.to as string) ? 'page' : undefined">
+                        :aria-current="isCurrent(item.to as string) ? 'page' : undefined"
+                        @click="closeMenu">
                         <UIcon
                             :name="item.icon as string"
                             class="size-5 shrink-0" />
                         {{ item.label }}
-                    </NuxtLink>
-
-                    <NuxtLink
-                        class="text-toned hover:bg-elevated mt-2 flex items-center gap-3 rounded-xl px-3 py-3 text-lg font-medium transition-colors"
-                        to="/privacy">
-                        <UIcon
-                            name="i-lucide-shield-user"
-                            class="size-5 shrink-0" />
-                        Privacy
                     </NuxtLink>
                 </nav>
             </template>

@@ -24,5 +24,18 @@ export const useNavItems = () => {
         }
     ]);
 
-    return {navigationItems};
+    /*
+     * Kept out of `navigationItems` so it stays out of the desktop header, but defined here rather
+     * than written inline: the footer and the mobile menu both list it, and hand-copying that link
+     * is what left the mobile one without active styling.
+     */
+    const legalItems = computed<NavigationMenuItem[]>(() => [
+        {
+            label: "Privacy",
+            to: "/privacy",
+            icon: "i-lucide-shield-user"
+        }
+    ]);
+
+    return {navigationItems, legalItems};
 };
