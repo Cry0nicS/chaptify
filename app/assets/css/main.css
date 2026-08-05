@@ -84,7 +84,9 @@
     --ui-radius: 0.625rem;
 
     --ui-primary: var(--color-iris-600);
-    --ui-secondary: var(--color-mint-600);
+    /* mint-700, not -600: the accent carries 12px measurement text, and -600 only reaches 3.75:1
+       against the darkest composited pane/field background. Do not lighten without re-measuring. */
+    --ui-secondary: var(--color-mint-700);
 
     --ui-bg: #ffffff;
     --ui-bg-muted: #f4f6fb;
@@ -92,7 +94,8 @@
     --ui-bg-accented: #e7ebf6;
     --ui-bg-inverted: #141726;
 
-    --ui-text-dimmed: #6d7488;
+    /* Dimmed is used at 12px (chips, placeholders), so it clears 4.5:1 on the field too. */
+    --ui-text-dimmed: #63697d;
     --ui-text-muted: #545c72;
     --ui-text-toned: #3f465a;
     --ui-text: #333a4d;
