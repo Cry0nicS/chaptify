@@ -29,35 +29,35 @@
         "type-check": "nuxt typecheck"
     },
     "dependencies": {
-        "@iconify-json/lucide": "^1.2.116",
-        "@iconify-json/simple-icons": "^1.2.89",
-        "@nuxt/ui": "~4.9.0",
         "archiver": "^8.0.0",
-        "better-sqlite3": "^12.11.1",
+        "better-sqlite3": "^13.0.3",
         "formidable": "^3.5.4",
-        "mailgun.js": "^13.3.0",
-        "nuxt": "~4.4.8",
-        "tailwindcss": "^4.3.2",
-        "zod": "^4.4.3"
+        "mailgun.js": "^13.3.0"
     },
     "devDependencies": {
-        "@antfu/eslint-config": "^9.1.0",
-        "@nuxt/eslint": "^1.16.0",
+        "@antfu/eslint-config": "^9.3.0",
+        "@iconify-json/lucide": "^1.2.123",
+        "@iconify-json/simple-icons": "^1.2.93",
+        "@nuxt/ui": "~4.10.0",
+        "@nuxt/eslint": "^1.17.0",
         "@types/archiver": "^8.0.0",
-        "@types/better-sqlite3": "^7.6.13",
+        "@types/better-sqlite3": "^9.6.0",
         "@types/formidable": "^3.5.1",
-        "@types/node": "^26.1.1",
-        "esbuild": "^0.28.1",
-        "eslint": "^10.7.0",
-        "lint-staged": "^16.4.0",
-        "oxc-parser": "^0.142.0",
-        "prettier": "^3.9.5",
-        "prettier-plugin-tailwindcss": "^0.8.0",
+        "@types/node": "^26.2.0",
+        "esbuild": "^0.28.2",
+        "eslint": "^10.8.1",
+        "lint-staged": "^17.3.0",
+        "nuxt": "~4.5.2",
+        "oxc-parser": "^0.143.0",
+        "prettier": "^3.9.6",
+        "prettier-plugin-tailwindcss": "^0.8.1",
         "simple-git-hooks": "^2.13.1",
-        "tsx": "^4.23.0",
+        "tailwindcss": "^4.3.3",
+        "tsx": "^4.23.12",
         "typescript": "^6.0.3",
         "vitest": "^4.1.10",
-        "vue-tsc": "^3.3.7"
+        "vue-tsc": "^3.3.9",
+        "zod": "^4.4.3"
     },
     "simple-git-hooks": {
         "pre-commit": "npx lint-staged"
@@ -65,5 +65,14 @@
     "lint-staged": {
         "*.{html,js,json,css,ts,vue}": "prettier --check",
         "*.{js,ts,vue}": "eslint"
+    },
+    "allowScripts": {
+        "vue-demi@0.14.10": true,
+        "@parcel/watcher@2.5.6": true,
+        "better-sqlite3@13.0.3": true,
+        "esbuild@0.28.2": true,
+        "esbuild@0.27.7": true,
+        "simple-git-hooks@2.13.1": true,
+        "unrs-resolver@1.12.2": true
     }
 }
