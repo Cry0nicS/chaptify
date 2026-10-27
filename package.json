@@ -32,14 +32,14 @@
         "archiver": "^8.0.0",
         "better-sqlite3": "^13.0.3",
         "formidable": "^3.5.4",
-        "mailgun.js": "^13.3.0"
+        "mailgun.js": "^14.1.0"
     },
     "devDependencies": {
-        "@antfu/eslint-config": "^9.3.0",
+        "@antfu/eslint-config": "^10.0.0",
         "@iconify-json/lucide": "^1.2.123",
         "@iconify-json/simple-icons": "^1.2.93",
-        "@nuxt/ui": "~4.10.0",
         "@nuxt/eslint": "^1.17.0",
+        "@nuxt/ui": "~4.12.0",
         "@types/archiver": "^8.0.0",
         "@types/better-sqlite3": "^9.6.0",
         "@types/formidable": "^3.5.1",
@@ -47,17 +47,17 @@
         "esbuild": "^0.28.2",
         "eslint": "^10.8.1",
         "lint-staged": "^17.3.0",
-        "nuxt": "~4.5.2",
-        "oxc-parser": "^0.143.0",
+        "nuxt": "~4.6.3",
+        "oxc-parser": "^0.156.0",
         "prettier": "^3.9.6",
         "prettier-plugin-tailwindcss": "^0.8.1",
         "simple-git-hooks": "^2.13.1",
         "tailwindcss": "^4.3.3",
         "tsx": "^4.23.12",
         "typescript": "^6.0.3",
-        "vitest": "^4.1.10",
+        "vitest": "^5.0.5",
         "vue-tsc": "^3.3.9",
-        "zod": "^4.4.3"
+        "zod": "^4.6.7"
     },
     "simple-git-hooks": {
         "pre-commit": "npx lint-staged"
@@ -72,7 +72,7 @@
         "better-sqlite3@13.0.3": true,
         "esbuild@0.28.2": true,
         "esbuild@0.27.7": true,
-        "simple-git-hooks@2.13.1": true,
+        "simple-git-hooks@2.14.0": true,
         "unrs-resolver@1.12.2": true
     }
 }
