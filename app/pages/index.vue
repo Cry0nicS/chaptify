@@ -75,12 +75,16 @@ const layers = [
     <div class="pb-16">
         <section
             class="grid gap-10 pt-12 pb-10 lg:grid-cols-[minmax(0,1fr)_minmax(27rem,0.9fr)] lg:gap-14 lg:pt-16">
-            <div class="lg:pt-2">
+            <div class="min-w-0 lg:pt-2">
+                <p class="micro-label text-secondary flex items-center gap-2">
+                    <UIcon
+                        name="i-lucide-watch"
+                        class="size-4 shrink-0" />
+                    Made for running watches and small players
+                </p>
                 <h1
-                    class="font-display text-highlighted max-w-[20ch] text-4xl font-bold tracking-[-0.042em] text-balance sm:text-5xl lg:text-6xl">
-                    One audiobook,
-                    <span class="text-primary">separated</span>
-                    into every chapter it already has.
+                    class="font-display text-highlighted mt-4 max-w-[18ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl lg:text-7xl">
+                    One audiobook, split into every chapter it already has.
                 </h1>
 
                 <p class="text-toned mt-6 max-w-[52ch] text-base sm:text-lg">
@@ -93,60 +97,27 @@ const layers = [
                     class="border-default mt-8 grid grid-cols-2 gap-x-8 gap-y-5 border-t pt-6 sm:flex sm:flex-wrap sm:gap-x-10">
                     <div>
                         <dt class="micro-label">Accepts</dt>
-                        <dd class="text-highlighted mt-1 font-semibold">M4B · MP3</dd>
+                        <dd class="stat text-highlighted mt-1 text-3xl">M4B · MP3</dd>
                     </div>
                     <div>
                         <dt class="micro-label">Up to</dt>
-                        <dd class="text-highlighted mt-1 font-semibold">1.6 GB · 30 h</dd>
+                        <dd class="stat text-highlighted mt-1 text-3xl">1.6 GB · 30 h</dd>
                     </div>
                     <div>
                         <dt class="micro-label">Link expires</dt>
-                        <dd class="text-highlighted mt-1 font-semibold">12 h</dd>
+                        <dd class="stat text-highlighted mt-1 text-3xl">12 h</dd>
                     </div>
                     <div>
                         <dt class="micro-label">Cost</dt>
-                        <dd class="text-highlighted mt-1 font-semibold">Free</dd>
+                        <dd class="stat text-secondary mt-1 text-3xl">Free</dd>
                     </div>
                 </dl>
-
-                <div class="pane pane-settle pane-settle-1 mt-10 p-5 sm:p-6">
-                    <ChapterSplits />
-
-                    <div class="border-muted mt-5 border-t pt-5">
-                        <p class="micro-label">What comes back</p>
-                        <div class="mt-3.5 flex flex-wrap items-center gap-1.5">
-                            <span
-                                class="bg-inverted text-inverted rounded-full px-2.5 py-1 font-mono text-[0.6875rem]">
-                                one-audiobook.m4b
-                            </span>
-                            <UIcon
-                                name="i-lucide-arrow-right"
-                                class="text-primary mx-0.5 size-3.5 shrink-0" />
-                            <span
-                                class="border-muted text-toned rounded-full border bg-white/85 px-2.5 py-1 font-mono text-[0.6875rem] dark:bg-white/10">
-                                01_chapter.mp3
-                            </span>
-                            <span
-                                class="border-muted text-toned rounded-full border bg-white/85 px-2.5 py-1 font-mono text-[0.6875rem] dark:bg-white/10">
-                                02_chapter.mp3
-                            </span>
-                            <span
-                                class="border-muted text-dimmed rounded-full border bg-white/85 px-2.5 py-1 font-mono text-[0.6875rem] dark:bg-white/10">
-                                + 3 more
-                            </span>
-                            <span
-                                class="border-primary/35 text-primary bg-primary/8 rounded-full border px-2.5 py-1 font-mono text-[0.6875rem]">
-                                chapters.zip
-                            </span>
-                        </div>
-                        <p class="text-muted mt-4 text-sm">
-                            Named in playback order, so any folder-only player keeps the sequence.
-                        </p>
-                    </div>
-                </div>
             </div>
 
-            <div :class="showJobPanel ? 'lg:self-start' : 'lg:sticky lg:top-24 lg:self-start'">
+            <!-- On small screens the form follows the headline directly; the example sits below it. -->
+            <div
+                class="lg:col-start-2 lg:row-span-2 lg:row-start-1"
+                :class="showJobPanel ? 'lg:self-start' : 'lg:sticky lg:top-24 lg:self-start'">
                 <div
                     v-if="!showJobPanel"
                     class="pane pane-front pane-settle pane-settle-2 p-5 sm:p-6">
@@ -259,7 +230,7 @@ const layers = [
                 <UButton
                     v-if="workflow.status === 'failed' && !workflow.job"
                     type="button"
-                    class="mt-4 rounded-full"
+                    class="mt-4"
                     color="neutral"
                     variant="subtle"
                     icon="i-lucide-refresh-cw"
@@ -267,38 +238,82 @@ const layers = [
                     Start over
                 </UButton>
             </div>
+            <div class="min-w-0 lg:col-start-1">
+                <div class="pane pane-settle pane-settle-1 p-5 sm:p-6">
+                    <ChapterSplits />
+
+                    <div class="border-muted mt-5 border-t pt-5">
+                        <p class="micro-label">What comes back</p>
+                        <div class="mt-3.5 flex flex-wrap items-center gap-1.5">
+                            <span
+                                class="bg-inverted text-inverted rounded-md px-2.5 py-1 text-sm font-semibold">
+                                one-audiobook.m4b
+                            </span>
+                            <UIcon
+                                name="i-lucide-arrow-right"
+                                class="text-primary mx-0.5 size-3.5 shrink-0" />
+                            <span
+                                class="border-muted text-toned bg-default rounded-md border px-2.5 py-1 text-sm">
+                                01_chapter.mp3
+                            </span>
+                            <span
+                                class="border-muted text-toned bg-default rounded-md border px-2.5 py-1 text-sm">
+                                02_chapter.mp3
+                            </span>
+                            <span
+                                class="border-muted text-dimmed bg-default rounded-md border px-2.5 py-1 text-sm">
+                                + 3 more
+                            </span>
+                            <span
+                                class="border-primary/40 text-primary bg-primary/10 rounded-md border px-2.5 py-1 text-sm font-semibold">
+                                chapters.zip
+                            </span>
+                        </div>
+                        <p class="text-muted mt-4 text-sm">
+                            Named in playback order, so any folder-only player keeps the sequence.
+                        </p>
+                    </div>
+                </div>
+            </div>
         </section>
 
         <section
-            class="grid gap-5 md:grid-cols-3 md:items-start"
+            class="pt-6"
             aria-labelledby="how-it-works">
             <h2
                 id="how-it-works"
-                class="sr-only">
+                class="font-display text-highlighted text-3xl font-bold sm:text-4xl">
                 How it works
             </h2>
-            <article
-                v-for="(layer, index) in layers"
-                :key="layer.index"
-                class="pane pane-lift p-6"
-                :class="index === 0 ? 'md:mt-16' : index === 1 ? 'md:mt-8' : ''">
-                <p class="data-line text-primary">{{ layer.index }}</p>
-                <h3
-                    class="text-highlighted mt-6 text-xl font-semibold tracking-[-0.025em] text-balance">
-                    {{ layer.title }}
-                </h3>
-                <p class="text-muted mt-2.5 text-sm">{{ layer.body }}</p>
-                <p class="border-muted data-line data-line-accent mt-5 border-t pt-3.5">
-                    {{ layer.data }}
-                </p>
-            </article>
+
+            <!-- The three steps read as a course: checkpoints along one track line. -->
+            <ol class="mt-8 grid gap-8 md:grid-cols-3 md:gap-6">
+                <li
+                    v-for="layer in layers"
+                    :key="layer.index"
+                    class="border-primary relative border-t-2 pt-6">
+                    <span
+                        class="bg-primary absolute -top-[7px] left-0 size-3 rounded-full"
+                        aria-hidden="true" />
+                    <p
+                        class="stat text-primary text-4xl"
+                        aria-hidden="true">
+                        {{ layer.index }}
+                    </p>
+                    <h3 class="text-highlighted mt-3 text-xl font-bold text-balance">
+                        {{ layer.title }}
+                    </h3>
+                    <p class="text-muted mt-2 max-w-[42ch]">{{ layer.body }}</p>
+                    <p class="data-line data-line-accent mt-4">{{ layer.data }}</p>
+                </li>
+            </ol>
         </section>
 
         <section
-            class="pane mt-14 grid gap-8 p-8 sm:p-10 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-center lg:gap-14">
+            class="pane mt-16 grid gap-8 p-8 sm:p-10 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-center lg:gap-14">
             <div>
                 <h2
-                    class="font-display text-highlighted max-w-[24ch] text-2xl font-bold tracking-[-0.03em] text-balance sm:text-3xl">
+                    class="font-display text-highlighted max-w-[24ch] text-3xl font-bold text-balance sm:text-4xl">
                     Built for the players that refuse one long file
                 </h2>
                 <p class="text-toned mt-4 max-w-[56ch]">
