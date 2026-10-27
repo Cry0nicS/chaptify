@@ -32,10 +32,10 @@ const finePrint = [
 </script>
 
 <template>
-    <div class="pb-16">
+    <div class="pb-20 lg:pb-28">
         <section class="pt-12 pb-2 lg:pt-16">
             <h1
-                class="font-display text-highlighted max-w-[22ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl lg:text-7xl">
+                class="font-display text-highlighted max-w-[22ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl">
                 Built for the long run.
             </h1>
             <p class="text-toned mt-6 max-w-[54ch] text-base sm:text-lg">
@@ -131,7 +131,7 @@ const finePrint = [
         </div>
 
         <section
-            class="pane mt-14 grid gap-8 p-8 sm:p-10 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-center lg:gap-14">
+            class="pane mt-20 grid gap-8 p-8 sm:p-10 lg:mt-28 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-center lg:gap-14">
             <div>
                 <h2
                     class="font-display text-highlighted max-w-[24ch] text-3xl font-bold text-balance sm:text-4xl">
