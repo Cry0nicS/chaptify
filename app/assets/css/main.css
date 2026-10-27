@@ -19,6 +19,12 @@
     --font-sans: "Barlow", sans-serif;
     --font-display: "Barlow Condensed", sans-serif;
 
+    /* Barlow has a small x-height, so the two smallest steps sit one notch above Tailwind's. */
+    --text-xs: 0.8125rem;
+    --text-xs--line-height: 1.45;
+    --text-sm: 0.9375rem;
+    --text-sm--line-height: 1.55;
+
     /* "Iris" — primary. Shifted from blue-violet toward violet; carries every action. */
     --color-iris-50: #f3f1ff;
     --color-iris-100: #e9e5ff;
@@ -78,9 +84,9 @@
     --ui-bg-accented: #e6e5f0;
     --ui-bg-inverted: var(--color-dusk-950);
 
-    --ui-text-dimmed: #66647b;
-    --ui-text-muted: #56546b;
-    --ui-text-toned: #3f3d52;
+    --ui-text-dimmed: #5c5a71;
+    --ui-text-muted: #4b4960;
+    --ui-text-toned: #36344a;
     --ui-text: #2e2c3d;
     --ui-text-highlighted: var(--color-dusk-950);
     --ui-text-inverted: #ffffff;
@@ -111,9 +117,9 @@
     --ui-bg-accented: #232333;
     --ui-bg-inverted: #f4f3fb;
 
-    --ui-text-dimmed: #908dab;
-    --ui-text-muted: #a19eb9;
-    --ui-text-toned: #bdbad2;
+    --ui-text-dimmed: #9e9bb8;
+    --ui-text-muted: #b6b3cc;
+    --ui-text-toned: #cac7dd;
     --ui-text: #d6d4e6;
     --ui-text-highlighted: #f4f3fb;
     --ui-text-inverted: #0e0e15;
@@ -166,33 +172,6 @@ body {
     }
 }
 
-/* Cards fade up once on load; under reduced motion they simply render in place. */
-@media (prefers-reduced-motion: no-preference) {
-    .pane-settle {
-        animation: pane-settle 360ms ease-out both;
-    }
-
-    .pane-settle-1 {
-        animation-delay: 60ms;
-    }
-
-    .pane-settle-2 {
-        animation-delay: 120ms;
-    }
-}
-
-@keyframes pane-settle {
-    from {
-        opacity: 0;
-        transform: translateY(8px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
 /* ---------------------------------------------------------------------------
  * Navigation. Plain links; the current page is marked with a mint lap bar.
  * ------------------------------------------------------------------------- */
@@ -240,16 +219,16 @@ body {
  * ------------------------------------------------------------------------- */
 .micro-label {
     font-family: var(--font-display);
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
     font-weight: 600;
     line-height: 1.3;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: var(--ui-text-muted);
+    color: var(--ui-text-toned);
 }
 
 .data-line {
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     font-weight: 500;
     font-variant-numeric: tabular-nums;
     color: var(--ui-text-muted);

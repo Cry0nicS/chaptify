@@ -3,8 +3,6 @@
  * Hero illustration: an example audiobook's chapters laid out the way a running watch shows laps —
  * lap number, chapter, length, and a bar for each lap's share of the longest one. It is real data in
  * a real table (with a caption), so it reads correctly without the visuals.
- *
- * Bars grow in once on load; under reduced motion they render at full width immediately.
  */
 interface ChapterSplit {
     title: string;
@@ -82,10 +80,9 @@ const lapNumber = (index: number) => String(index + 1).padStart(2, "0");
                             class="bg-muted mt-1.5 h-1.5 overflow-hidden rounded-full"
                             aria-hidden="true">
                             <div
-                                class="split-bar bg-secondary h-full rounded-full"
+                                class="bg-secondary h-full rounded-full"
                                 :style="{
-                                    'width': `${Math.round((split.seconds / longest) * 100)}%`,
-                                    '--split-delay': `${index * 90}ms`
+                                    width: `${Math.round((split.seconds / longest) * 100)}%`
                                 }" />
                         </div>
                     </td>
@@ -97,23 +94,3 @@ const lapNumber = (index: number) => String(index + 1).padStart(2, "0");
         </table>
     </div>
 </template>
-
-<style scoped>
-@media (prefers-reduced-motion: no-preference) {
-    .split-bar {
-        animation: split-grow 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
-        animation-delay: var(--split-delay);
-        transform-origin: left;
-    }
-}
-
-@keyframes split-grow {
-    from {
-        transform: scaleX(0);
-    }
-
-    to {
-        transform: scaleX(1);
-    }
-}
-</style>
