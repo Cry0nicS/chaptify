@@ -5,7 +5,7 @@ import {useNavItems} from "~/composables/use-nav-items";
  * Plain sticky header: a full-width bar with a hairline rule, hand-built so the current-page lap bar
  * can sit under the link — but every control inside it is a Nuxt UI component.
  *
- * Below `sm` the links do not fit the pill, so they move into a slide-over sheet (focus trap, escape
+ * Below `sm` the links do not fit the bar, so they move into a slide-over sheet (focus trap, escape
  * and scroll locking come from `USlideover`). The sheet closes when a link is selected — including
  * the link for the page already open, which produces no route change — and the route watcher covers
  * navigation that happens without a tap, such as browser back while the sheet is open.
@@ -15,7 +15,7 @@ const route = useRoute();
 
 const isMenuOpen = ref(false);
 
-// The sheet lists the legal link too; the desktop pill deliberately does not.
+// The sheet lists the legal link too; the desktop bar deliberately does not.
 const menuItems = computed(() => [...navigationItems.value, ...legalItems.value]);
 
 const isCurrent = (to?: string) => route.path === to;

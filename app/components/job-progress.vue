@@ -3,23 +3,24 @@ import type {JobStatusResponse} from "#shared/utils/types";
 import {computed} from "vue";
 import {displayProcessingProgress, hasChapterProgress} from "../utils/progress";
 
-const props = defineProps<{
-    job: JobStatusResponse;
-    transientError?: string | null;
-    previousProgress?: number;
-}>();
+const props = withDefaults(
+    defineProps<{
+        job: JobStatusResponse;
+        transientError?: string | null;
+        previousProgress?: number;
+        // The status response carries no job kind, so the page says which flow this is.
+        kind?: "split" | "convert";
+    }>(),
+    {kind: "split"}
+);
 
 const displayProgress = computed(() =>
     displayProcessingProgress(props.job.status, props.previousProgress ?? 0, props.job.progress)
 );
 
-const chapterLabel = computed(() => {
-    if (!hasChapterProgress(props.job.currentChapter, props.job.totalChapters)) {
-        return null;
-    }
-
-    return `Processing chapter ${props.job.currentChapter} of ${props.job.totalChapters}`;
-});
+const hasLaps = computed(() =>
+    hasChapterProgress(props.job.currentChapter, props.job.totalChapters)
+);
 
 const statusTitle = computed(() =>
     props.job.status === "queued" ? "Queued for processing" : "Processing your audiobook"
@@ -30,8 +31,18 @@ const statusMessage = computed(() => {
         return "Your upload is complete and waiting for the worker to start.";
     }
 
-    return chapterLabel.value || "Chaptify is reading embedded chapters and preparing files.";
+    if (hasLaps.value) {
+        return `Processing chapter ${props.job.currentChapter} of ${props.job.totalChapters}`;
+    }
+
+    return props.kind === "convert"
+        ? "Chaptify is converting the file to its new format."
+        : "Chaptify is reading embedded chapters and preparing files.";
 });
+
+const downloadLinkLabel = computed(() =>
+    props.kind === "convert" ? "The download link" : "The ZIP download link"
+);
 </script>
 
 <template>
@@ -50,7 +61,7 @@ const statusMessage = computed(() => {
                 <p class="text-muted text-sm">{{ statusMessage }}</p>
             </div>
             <div class="flex items-end gap-6 sm:text-right">
-                <div v-if="chapterLabel">
+                <div v-if="hasLaps">
                     <p class="micro-label">Lap</p>
                     <p class="stat text-highlighted mt-1 flex items-baseline text-3xl">
                         <span>{{ job.currentChapter }}</span>
@@ -69,8 +80,8 @@ const statusMessage = computed(() => {
             :max="100" />
 
         <p class="text-muted text-sm">
-            Once the upload is complete, you may leave this page. The ZIP download link will be sent
-            by email.
+            Once the upload is complete, you may leave this page. {{ downloadLinkLabel }} will be
+            sent by email.
         </p>
         <UAlert
             v-if="transientError"

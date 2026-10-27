@@ -128,6 +128,8 @@
     --ui-border: #2a2a3a;
     --ui-border-muted: #22222f;
     --ui-border-accented: #6a6884;
+    /* The raised card's rule: one step above --ui-border so the lifted surface keeps an edge. */
+    --card-raised-border: #34344a;
     --ui-border-inverted: #f4f3fb;
 
     --page: #0e0e15;
@@ -171,7 +173,7 @@ body {
 }
 
 .dark .pane-raised {
-    border-color: #34344a;
+    border-color: var(--card-raised-border);
     border-top-color: var(--ui-primary);
     background: var(--ui-bg-elevated);
     box-shadow: none;

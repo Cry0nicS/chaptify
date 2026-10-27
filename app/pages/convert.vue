@@ -186,7 +186,8 @@ const layers = [
                             v-if="workflow.job"
                             :job="workflow.job"
                             :previous-progress="visibleProgress"
-                            :transient-error="transientError" />
+                            :transient-error="transientError"
+                            kind="convert" />
                         <UAlert
                             color="primary"
                             variant="soft"
@@ -203,7 +204,8 @@ const layers = [
                         v-if="workflow.status === 'processing'"
                         :job="workflow.job"
                         :previous-progress="visibleProgress"
-                        :transient-error="transientError" />
+                        :transient-error="transientError"
+                        kind="convert" />
 
                     <UAlert
                         v-if="deleteError"
