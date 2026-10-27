@@ -97,26 +97,36 @@ defineExpose({
             :class="
                 isDragActive
                     ? 'border-primary bg-primary/10'
-                    : 'border-accented bg-muted hover:border-primary'
+                    : 'border-accented/50 bg-muted hover:border-primary/70'
             "
             @dragenter.prevent="isDragActive = true"
             @dragover.prevent="isDragActive = true"
             @dragleave.prevent="isDragActive = false"
             @drop.prevent="onDrop">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div class="space-y-1">
-                    <p class="text-highlighted font-medium">Drop one audiobook here</p>
-                    <p
-                        id="file-help"
-                        class="data-line">
-                        M4B or MP3 · up to 1.6 GB
-                    </p>
+                <div class="flex items-center gap-4">
+                    <span
+                        class="border-default bg-default flex size-11 shrink-0 items-center justify-center rounded-md border"
+                        aria-hidden="true">
+                        <UIcon
+                            name="i-lucide-file-audio"
+                            class="text-primary size-5" />
+                    </span>
+                    <div class="space-y-0.5">
+                        <p class="text-highlighted font-semibold">Drop one audiobook here</p>
+                        <p
+                            id="file-help"
+                            class="data-line">
+                            M4B or MP3 · up to 1.6 GB
+                        </p>
+                    </div>
                 </div>
 
                 <UButton
                     type="button"
                     color="neutral"
-                    variant="subtle"
+                    variant="outline"
+                    size="lg"
                     icon="i-lucide-upload"
                     :disabled="disabled"
                     @click="fileInput?.click()">
