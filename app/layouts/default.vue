@@ -10,15 +10,6 @@ const isCurrent = (to?: string) => route.path === to;
 
 <template>
     <div class="flex min-h-svh flex-col">
-        <!-- The lit field: one fixed decorative layer the whole site floats on. -->
-        <div
-            class="aurora-field"
-            aria-hidden="true">
-            <span class="aurora-blob aurora-blob-blue" />
-            <span class="aurora-blob aurora-blob-violet" />
-            <span class="aurora-blob aurora-blob-mint" />
-        </div>
-
         <NavHeader />
 
         <UMain class="relative z-1 grow">
