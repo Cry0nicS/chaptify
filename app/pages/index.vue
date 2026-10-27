@@ -110,16 +110,7 @@ const layers = [
                 </dl>
 
                 <div class="pane pane-settle pane-settle-1 mt-10 p-5 sm:p-6">
-                    <div class="mb-5 flex items-center justify-between gap-4">
-                        <p class="micro-label">Chapter meter</p>
-                        <p class="data-line">5 marks · 2:43:26</p>
-                    </div>
-
-                    <ChapterWaveform hover-replay />
-
-                    <p class="text-muted mt-4 text-sm">
-                        Point at it to run the cut again — an illustration of a five-chapter file.
-                    </p>
+                    <ChapterSplits />
 
                     <div class="border-muted mt-5 border-t pt-5">
                         <p class="micro-label">What comes back</p>
