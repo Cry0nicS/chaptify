@@ -93,7 +93,7 @@ defineExpose({
         </label>
 
         <div
-            class="rounded-lg border-2 border-dashed p-5 transition-colors"
+            class="has-[input:focus-visible]:outline-primary rounded-lg border-2 border-dashed p-5 transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2"
             :class="
                 isDragActive
                     ? 'border-primary bg-primary/10'
