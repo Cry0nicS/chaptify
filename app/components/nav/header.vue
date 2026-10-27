@@ -2,8 +2,8 @@
 import {useNavItems} from "~/composables/use-nav-items";
 
 /**
- * Floating pill header. The bar is an ornament over the aurora field rather than a full-width band,
- * so it is hand-built from the pane material — but every control inside it is a Nuxt UI component.
+ * Plain sticky header: a full-width bar with a hairline rule, hand-built so the current-page lap bar
+ * can sit under the link — but every control inside it is a Nuxt UI component.
  *
  * Below `sm` the links do not fit the pill, so they move into a slide-over sheet (focus trap, escape
  * and scroll locking come from `USlideover`). The sheet closes when a link is selected — including
@@ -32,10 +32,11 @@ watch(() => route.fullPath, closeMenu);
 </script>
 
 <template>
-    <header class="sticky top-0 z-30 flex justify-center px-4 pt-4 sm:px-6">
-        <div class="pane pane-pill flex w-full max-w-3xl items-center gap-2 py-2 pr-2 pl-4">
+    <header class="border-default bg-default/95 sticky top-0 z-30 border-b">
+        <div
+            class="mx-auto flex h-16 max-w-(--ui-container) items-center gap-2 px-4 sm:px-6 lg:px-8">
             <NuxtLink
-                class="text-highlighted mr-auto inline-flex items-center gap-2.5 text-base font-bold tracking-tight"
+                class="text-highlighted font-display mr-auto inline-flex items-center gap-2.5 text-2xl font-bold tracking-tight"
                 to="/"
                 :aria-current="isCurrent('/') ? 'page' : undefined">
                 <AppLogo class="h-7 w-auto" />
@@ -49,7 +50,6 @@ watch(() => route.fullPath, closeMenu);
                     v-for="item in navigationItems"
                     :key="item.to as string"
                     class="nav-link"
-                    :class="isCurrent(item.to as string) ? 'nav-link-active' : ''"
                     :to="item.to as string"
                     :aria-current="isCurrent(item.to as string) ? 'page' : undefined">
                     {{ item.label }}
@@ -72,7 +72,7 @@ watch(() => route.fullPath, closeMenu);
             v-model:open="isMenuOpen"
             title="Chaptify"
             description="Site navigation"
-            :ui="{content: 'divide-y-0 bg-default/85 backdrop-blur-xl'}">
+            :ui="{content: 'divide-y-0'}">
             <template #body>
                 <nav
                     class="flex flex-col gap-1"
@@ -80,10 +80,10 @@ watch(() => route.fullPath, closeMenu);
                     <NuxtLink
                         v-for="item in menuItems"
                         :key="item.to as string"
-                        class="hover:bg-elevated flex items-center gap-3 rounded-xl px-3 py-3 text-lg font-medium transition-colors"
+                        class="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-3 text-lg font-semibold transition-colors"
                         :class="
                             isCurrent(item.to as string)
-                                ? 'text-primary bg-primary/8'
+                                ? 'text-primary bg-primary/10'
                                 : 'text-toned'
                         "
                         :to="item.to as string"
