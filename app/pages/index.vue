@@ -120,7 +120,7 @@ const layers = [
                 :class="showJobPanel ? 'lg:self-start' : 'lg:sticky lg:top-24 lg:self-start'">
                 <div
                     v-if="!showJobPanel"
-                    class="pane pane-front pane-settle pane-settle-2 p-5 sm:p-6">
+                    class="pane pane-front p-5 sm:p-6">
                     <div class="mb-5 flex items-center justify-between gap-4">
                         <h2 class="text-highlighted text-lg font-semibold tracking-tight">
                             Split your audiobook
@@ -239,7 +239,7 @@ const layers = [
                 </UButton>
             </div>
             <div class="min-w-0 lg:col-start-1">
-                <div class="pane pane-settle pane-settle-1 p-5 sm:p-6">
+                <div class="pane p-5 sm:p-6">
                     <ChapterSplits />
 
                     <div class="border-muted mt-5 border-t pt-5">
