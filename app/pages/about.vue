@@ -35,7 +35,7 @@ const finePrint = [
     <div class="pb-16">
         <section class="pt-12 pb-2 lg:pt-16">
             <h1
-                class="font-display text-highlighted max-w-[22ch] text-4xl font-bold tracking-[-0.042em] text-balance sm:text-5xl lg:text-6xl">
+                class="font-display text-highlighted max-w-[22ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl lg:text-7xl">
                 Built for the long run.
             </h1>
             <p class="text-toned mt-6 max-w-[54ch] text-base sm:text-lg">
@@ -49,7 +49,7 @@ const finePrint = [
                 <section aria-labelledby="about-problem">
                     <h2
                         id="about-problem"
-                        class="font-display text-highlighted text-2xl font-bold tracking-[-0.03em] text-balance sm:text-3xl">
+                        class="font-display text-highlighted text-3xl font-bold text-balance sm:text-4xl">
                         A marathon is long. A phone is heavy.
                     </h2>
                     <div class="text-toned mt-4 space-y-4">
@@ -71,7 +71,7 @@ const finePrint = [
                     aria-labelledby="about-fix">
                     <h2
                         id="about-fix"
-                        class="font-display text-highlighted text-2xl font-bold tracking-[-0.03em] text-balance sm:text-3xl">
+                        class="font-display text-highlighted text-3xl font-bold text-balance sm:text-4xl">
                         Splits — in both senses
                     </h2>
                     <div class="text-toned mt-4 space-y-4">
@@ -95,7 +95,7 @@ const finePrint = [
                     aria-labelledby="about-everyone">
                     <h2
                         id="about-everyone"
-                        class="font-display text-highlighted text-2xl font-bold tracking-[-0.03em] text-balance sm:text-3xl">
+                        class="font-display text-highlighted text-3xl font-bold text-balance sm:text-4xl">
                         Made for one Garmin, shared with all of them
                     </h2>
                     <div class="text-toned mt-4 space-y-4">
@@ -134,7 +134,7 @@ const finePrint = [
             class="pane mt-14 grid gap-8 p-8 sm:p-10 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-center lg:gap-14">
             <div>
                 <h2
-                    class="font-display text-highlighted max-w-[24ch] text-2xl font-bold tracking-[-0.03em] text-balance sm:text-3xl">
+                    class="font-display text-highlighted max-w-[24ch] text-3xl font-bold text-balance sm:text-4xl">
                     Your turn — one file, one address
                 </h2>
                 <p class="text-toned mt-4 max-w-[52ch]">

@@ -102,7 +102,7 @@ const sendAnother = () => {
     <div class="pb-16">
         <section class="pt-12 pb-2 lg:pt-16">
             <h1
-                class="font-display text-highlighted max-w-[18ch] text-4xl font-bold tracking-[-0.042em] text-balance sm:text-5xl lg:text-6xl">
+                class="font-display text-highlighted max-w-[18ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl lg:text-7xl">
                 Get in touch.
             </h1>
             <p class="text-toned mt-6 max-w-[54ch] text-base sm:text-lg">
@@ -203,7 +203,7 @@ const sendAnother = () => {
                     <div class="mb-5">
                         <h2
                             id="contact-form-title"
-                            class="text-highlighted text-lg font-semibold tracking-tight">
+                            class="font-display text-highlighted text-2xl font-bold">
                             Send a message
                         </h2>
                         <p class="data-line mt-1">All fields are required</p>
@@ -220,7 +220,6 @@ const sendAnother = () => {
                             description="Thanks for taking the time. If a reply is needed, it will come to the address you entered." />
                         <UButton
                             type="button"
-                            class="rounded-full"
                             color="neutral"
                             variant="subtle"
                             icon="i-lucide-pen-line"

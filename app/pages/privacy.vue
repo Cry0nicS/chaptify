@@ -51,7 +51,7 @@ const processors = [
     <div class="pb-16">
         <section class="pt-12 pb-2 lg:pt-16">
             <h1
-                class="font-display text-highlighted max-w-[20ch] text-4xl font-bold tracking-[-0.042em] text-balance sm:text-5xl lg:text-6xl">
+                class="font-display text-highlighted max-w-[20ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl lg:text-7xl">
                 Your data, kept simple.
             </h1>
             <p class="text-toned mt-6 max-w-[56ch] text-base sm:text-lg">
@@ -66,7 +66,7 @@ const processors = [
                 <section aria-labelledby="privacy-what">
                     <h2
                         id="privacy-what"
-                        class="font-display text-highlighted text-2xl font-bold tracking-[-0.03em] text-balance sm:text-3xl">
+                        class="font-display text-highlighted text-3xl font-bold text-balance sm:text-4xl">
                         What we process, and why
                     </h2>
                     <div class="text-toned mt-4 space-y-4">
@@ -109,7 +109,7 @@ const processors = [
                     aria-labelledby="privacy-keep">
                     <h2
                         id="privacy-keep"
-                        class="font-display text-highlighted text-2xl font-bold tracking-[-0.03em] text-balance sm:text-3xl">
+                        class="font-display text-highlighted text-3xl font-bold text-balance sm:text-4xl">
                         What we keep, and for how long
                     </h2>
                     <div class="text-toned mt-4 space-y-4">
@@ -143,7 +143,7 @@ const processors = [
                     aria-labelledby="privacy-storage">
                     <h2
                         id="privacy-storage"
-                        class="font-display text-highlighted text-2xl font-bold tracking-[-0.03em] text-balance sm:text-3xl">
+                        class="font-display text-highlighted text-3xl font-bold text-balance sm:text-4xl">
                         Storage in your browser
                     </h2>
                     <div class="text-toned mt-4 space-y-4">
@@ -189,7 +189,7 @@ const processors = [
                     aria-labelledby="privacy-rights">
                     <h2
                         id="privacy-rights"
-                        class="font-display text-highlighted text-2xl font-bold tracking-[-0.03em] text-balance sm:text-3xl">
+                        class="font-display text-highlighted text-3xl font-bold text-balance sm:text-4xl">
                         Your rights
                     </h2>
                     <p class="text-toned mt-4">
@@ -211,7 +211,7 @@ const processors = [
                     aria-labelledby="privacy-changes">
                     <h2
                         id="privacy-changes"
-                        class="text-highlighted text-lg font-semibold tracking-tight">
+                        class="font-display text-highlighted text-2xl font-bold">
                         Changes to this notice
                     </h2>
                     <p class="text-muted mt-2 text-sm">
