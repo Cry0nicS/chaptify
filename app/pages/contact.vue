@@ -99,10 +99,10 @@ const sendAnother = () => {
 </script>
 
 <template>
-    <div class="pb-16">
+    <div class="pb-20 lg:pb-28">
         <section class="pt-12 pb-2 lg:pt-16">
             <h1
-                class="font-display text-highlighted max-w-[18ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl lg:text-7xl">
+                class="font-display text-highlighted max-w-[18ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl">
                 Get in touch.
             </h1>
             <p class="text-toned mt-6 max-w-[54ch] text-base sm:text-lg">
@@ -199,7 +199,7 @@ const sendAnother = () => {
             <section
                 class="lg:sticky lg:top-24 lg:self-start"
                 aria-labelledby="contact-form-title">
-                <div class="pane pane-front p-5 sm:p-6">
+                <div class="pane pane-front pane-raised p-6 sm:p-8">
                     <div class="mb-5">
                         <h2
                             id="contact-form-title"
