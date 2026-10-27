@@ -93,11 +93,11 @@ defineExpose({
         </label>
 
         <div
-            class="rounded-2xl border border-dashed p-5 transition-colors"
+            class="rounded-lg border-2 border-dashed p-5 transition-colors"
             :class="
                 isDragActive
                     ? 'border-primary bg-primary/10'
-                    : 'border-accented bg-default/50 hover:bg-default'
+                    : 'border-accented bg-muted hover:border-primary'
             "
             @dragenter.prevent="isDragActive = true"
             @dragover.prevent="isDragActive = true"
@@ -115,7 +115,6 @@ defineExpose({
 
                 <UButton
                     type="button"
-                    class="rounded-full"
                     color="neutral"
                     variant="subtle"
                     icon="i-lucide-upload"

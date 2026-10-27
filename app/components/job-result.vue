@@ -100,7 +100,6 @@ const emailMessage = computed(() => {
                 <UButton
                     v-if="canDelete"
                     type="button"
-                    class="rounded-full"
                     size="lg"
                     color="neutral"
                     variant="subtle"

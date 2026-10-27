@@ -29,7 +29,6 @@ const extension = computed(() => getAudiobookExtension(props.file.name)?.toUpper
 
             <UButton
                 type="button"
-                class="rounded-full"
                 color="neutral"
                 variant="subtle"
                 icon="i-lucide-x"
