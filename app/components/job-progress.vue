@@ -49,21 +49,25 @@ const statusMessage = computed(() => {
                 <h2 class="text-highlighted text-lg font-semibold">{{ statusTitle }}</h2>
                 <p class="text-muted text-sm">{{ statusMessage }}</p>
             </div>
-            <p class="text-secondary font-mono text-3xl font-medium tabular-nums">
-                {{ displayProgress }}%
-            </p>
+            <div class="flex items-end gap-6 sm:text-right">
+                <div v-if="chapterLabel">
+                    <p class="micro-label">Lap</p>
+                    <p class="stat text-highlighted mt-1 flex items-baseline text-3xl">
+                        <span>{{ job.currentChapter }}</span>
+                        <span class="text-muted text-xl">/{{ job.totalChapters }}</span>
+                    </p>
+                </div>
+                <div>
+                    <p class="micro-label">Done</p>
+                    <p class="stat text-secondary mt-1 text-5xl">{{ displayProgress }}%</p>
+                </div>
+            </div>
         </div>
 
         <UProgress
             :model-value="displayProgress"
-            :max="100"
-            status />
+            :max="100" />
 
-        <p
-            v-if="chapterLabel"
-            class="text-muted text-sm">
-            {{ chapterLabel }}
-        </p>
         <p class="text-muted text-sm">
             Once the upload is complete, you may leave this page. The ZIP download link will be sent
             by email.
