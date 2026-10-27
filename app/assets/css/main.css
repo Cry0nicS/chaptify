@@ -117,8 +117,9 @@
     --ui-bg-accented: #232333;
     --ui-bg-inverted: #f4f3fb;
 
-    --ui-text-dimmed: #9e9bb8;
-    --ui-text-muted: #b6b3cc;
+    /* Light-on-dark Barlow renders thin, so dark secondary text sits a step brighter than light's. */
+    --ui-text-dimmed: #aaa7c3;
+    --ui-text-muted: #c2bfd7;
     --ui-text-toned: #cac7dd;
     --ui-text: #d6d4e6;
     --ui-text-highlighted: #f4f3fb;
@@ -264,6 +265,24 @@ body {
 /* Primary actions: solid violet, no glow. The `.action-pill` name is the component API. */
 .action-pill {
     font-weight: 600;
+}
+
+/* In dark, the primary action steps up to violet-300 with ink text: 9.3:1, and still 5.7:1 while
+   disabled, where violet-400 read pastel and dropped to 4.3:1 at the disabled opacity. */
+.dark .action-pill,
+.dark .action-pill:disabled {
+    background-color: var(--color-iris-300);
+    color: var(--color-dusk-950);
+}
+
+@media (hover: hover) {
+    .dark .action-pill:not(:disabled):hover {
+        background-color: var(--color-iris-200);
+    }
+}
+
+.dark .action-pill:not(:disabled):active {
+    background-color: var(--color-iris-200);
 }
 
 /* ---------------------------------------------------------------------------
