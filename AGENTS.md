@@ -76,7 +76,7 @@ Nuxt UI is the primary component system.
 - Prefer Nuxt UI components over custom implementations.
 - Do not recreate buttons, form controls, alerts, progress indicators, dropdowns, dialogs, or layout primitives when a suitable Nuxt UI component exists.
 - Follow the existing Nuxt UI theme and color-mode configuration.
-- The application supports color mode and defaults to the system preference, with dark mode as the fallback.
+- The application supports color mode and defaults to the system preference, with light mode as the fallback.
 - Preserve light-mode and dark-mode behavior.
 - Prefer Tailwind utility classes for local styling.
 - Avoid scoped CSS unless Nuxt UI and Tailwind cannot reasonably express the required behavior.

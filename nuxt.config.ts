@@ -74,8 +74,9 @@ export default defineNuxtConfig({
         }
     },
 
+    // Follow the visitor's system theme; when the browser reports no preference, start in light.
     colorMode: {
-        fallback: "dark",
+        fallback: "light",
         preference: "system"
     },
 
