@@ -72,9 +72,9 @@ const layers = [
 </script>
 
 <template>
-    <div class="pb-16">
+    <div class="pb-20 lg:pb-28">
         <section
-            class="grid gap-10 pt-12 pb-10 lg:grid-cols-[minmax(0,1fr)_minmax(27rem,0.9fr)] lg:gap-14 lg:pt-16">
+            class="grid gap-10 pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(28rem,30rem)] lg:gap-x-16 lg:gap-y-12 lg:pt-16">
             <div class="min-w-0 lg:pt-2">
                 <p class="micro-label text-secondary flex items-center gap-2">
                     <UIcon
@@ -83,7 +83,7 @@ const layers = [
                     Made for running watches and small players
                 </p>
                 <h1
-                    class="font-display text-highlighted mt-4 max-w-[18ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl lg:text-7xl">
+                    class="font-display text-highlighted mt-4 max-w-[18ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl">
                     One audiobook, split into every chapter it already has.
                 </h1>
 
@@ -120,11 +120,16 @@ const layers = [
                 :class="showJobPanel ? 'lg:self-start' : 'lg:sticky lg:top-24 lg:self-start'">
                 <div
                     v-if="!showJobPanel"
-                    class="pane pane-front p-5 sm:p-6">
-                    <div class="mb-5 flex items-center justify-between gap-4">
-                        <h2 class="text-highlighted text-lg font-semibold tracking-tight">
-                            Split your audiobook
-                        </h2>
+                    class="pane pane-front pane-raised p-6 sm:p-8">
+                    <div class="mb-6 flex items-start justify-between gap-4">
+                        <div>
+                            <h2 class="font-display text-highlighted text-3xl font-bold">
+                                Split your audiobook
+                            </h2>
+                            <p class="text-muted mt-1">
+                                Pick the file, choose a format, add your email. That's it.
+                            </p>
+                        </div>
                         <UBadge
                             v-if="activeJobId"
                             color="neutral"
@@ -239,7 +244,7 @@ const layers = [
                 </UButton>
             </div>
             <div class="min-w-0 lg:col-start-1">
-                <div class="pane p-5 sm:p-6">
+                <div class="pane-quiet border-default border p-5 sm:p-6">
                     <ChapterSplits />
 
                     <div class="border-muted mt-5 border-t pt-5">
@@ -278,7 +283,7 @@ const layers = [
         </section>
 
         <section
-            class="pt-6"
+            class="mt-20 lg:mt-28"
             aria-labelledby="how-it-works">
             <h2
                 id="how-it-works"
@@ -310,7 +315,7 @@ const layers = [
         </section>
 
         <section
-            class="pane mt-16 grid gap-8 p-8 sm:p-10 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-center lg:gap-14">
+            class="pane mt-20 grid gap-8 p-8 sm:p-10 lg:mt-28 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-center lg:gap-14">
             <div>
                 <h2
                     class="font-display text-highlighted max-w-[24ch] text-3xl font-bold text-balance sm:text-4xl">

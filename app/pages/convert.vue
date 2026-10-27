@@ -79,9 +79,9 @@ const layers = [
 </script>
 
 <template>
-    <div class="pb-16">
+    <div class="pb-20 lg:pb-28">
         <section
-            class="grid gap-10 pt-12 pb-10 lg:grid-cols-[minmax(0,1fr)_minmax(27rem,0.9fr)] lg:gap-14 lg:pt-16">
+            class="grid gap-10 pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(28rem,30rem)] lg:gap-x-16 lg:gap-y-12 lg:pt-16">
             <div class="min-w-0 lg:pt-2">
                 <p class="micro-label text-secondary flex items-center gap-2">
                     <UIcon
@@ -90,7 +90,7 @@ const layers = [
                     One file in, the other format out
                 </p>
                 <h1
-                    class="font-display text-highlighted mt-4 max-w-[18ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl lg:text-7xl">
+                    class="font-display text-highlighted mt-4 max-w-[18ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl">
                     Convert an audiobook between MP3 and M4B.
                 </h1>
 
@@ -126,11 +126,16 @@ const layers = [
                 :class="showJobPanel ? 'lg:self-start' : 'lg:sticky lg:top-24 lg:self-start'">
                 <div
                     v-if="!showJobPanel"
-                    class="pane pane-front p-5 sm:p-6">
-                    <div class="mb-5 flex items-center justify-between gap-4">
-                        <h2 class="text-highlighted text-lg font-semibold tracking-tight">
-                            Convert your audiobook
-                        </h2>
+                    class="pane pane-front pane-raised p-6 sm:p-8">
+                    <div class="mb-6 flex items-start justify-between gap-4">
+                        <div>
+                            <h2 class="font-display text-highlighted text-3xl font-bold">
+                                Convert your audiobook
+                            </h2>
+                            <p class="text-muted mt-1">
+                                Pick the file, choose the target format, add your email.
+                            </p>
+                        </div>
                         <UBadge
                             v-if="activeJobId"
                             color="neutral"
@@ -245,7 +250,7 @@ const layers = [
                 </UButton>
             </div>
             <div class="min-w-0 lg:col-start-1">
-                <div class="pane p-5 sm:p-6">
+                <div class="pane-quiet border-default border p-5 sm:p-6">
                     <p class="micro-label">The swap</p>
 
                     <div class="mt-5 flex items-center justify-center gap-4 sm:gap-7">
@@ -281,7 +286,7 @@ const layers = [
         </section>
 
         <section
-            class="pt-6"
+            class="mt-20 lg:mt-28"
             aria-labelledby="convert-how">
             <h2
                 id="convert-how"
