@@ -69,6 +69,34 @@ const removeFile = () => {
     emit("fileRemoved");
 };
 
+// The whole zone opens the picker. Clicks that come from the input itself (the picker's own
+// activation bubbling up) are ignored so they cannot re-open it.
+const openPicker = (event?: MouseEvent) => {
+    if (props.disabled || event?.target === fileInput.value) {
+        return;
+    }
+
+    fileInput.value?.click();
+};
+
+// dragleave also fires when the pointer moves onto a child element; only clear the highlight once it
+// has actually left the zone, so it does not flicker while dragging across the text.
+const onDragLeave = (event: DragEvent) => {
+    const zone = event.currentTarget as HTMLElement;
+
+    if (!zone.contains(event.relatedTarget as Node | null)) {
+        isDragActive.value = false;
+    }
+};
+
+const prompt = computed(() => {
+    if (isDragActive.value) {
+        return "Release to add the file";
+    }
+
+    return props.file ? "Drop another file to replace it" : "Drop one audiobook here";
+});
+
 const onDrop = (event: DragEvent) => {
     isDragActive.value = false;
 
@@ -99,9 +127,12 @@ defineExpose({
                     ? 'border-primary bg-primary/10'
                     : 'border-accented/50 bg-muted hover:border-primary/70'
             "
+            :aria-disabled="disabled || undefined"
+            :style="{cursor: disabled ? 'not-allowed' : 'pointer'}"
+            @click="openPicker"
             @dragenter.prevent="isDragActive = true"
             @dragover.prevent="isDragActive = true"
-            @dragleave.prevent="isDragActive = false"
+            @dragleave.prevent="onDragLeave"
             @drop.prevent="onDrop">
             <div
                 class="flex flex-col items-start gap-4 @md:flex-row @md:items-center @md:justify-between">
@@ -114,7 +145,7 @@ defineExpose({
                             class="text-primary size-5" />
                     </span>
                     <div class="space-y-0.5">
-                        <p class="text-highlighted font-semibold">Drop one audiobook here</p>
+                        <p class="text-highlighted font-semibold">{{ prompt }}</p>
                         <p
                             id="file-help"
                             class="data-line">
@@ -130,7 +161,7 @@ defineExpose({
                     size="lg"
                     icon="i-lucide-upload"
                     :disabled="disabled"
-                    @click="fileInput?.click()">
+                    @click.stop="openPicker">
                     Choose file
                 </UButton>
             </div>
