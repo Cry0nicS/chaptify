@@ -14,7 +14,7 @@
                 gradientUnits="userSpaceOnUse">
                 <stop
                     offset="0"
-                    stop-color="#168BFF" />
+                    stop-color="#5B5EF2" />
                 <stop
                     offset="1"
                     stop-color="#7C3AED" />
