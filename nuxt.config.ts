@@ -25,6 +25,19 @@ export default defineNuxtConfig({
 
     css: ["~/assets/css/main.css"],
 
+    // Icons live here rather than in app.vue so the error page, which replaces app.vue, keeps them.
+    // Every file is the same mark as app/components/app-logo.vue.
+    app: {
+        head: {
+            link: [
+                {rel: "icon", href: "/favicon.ico", sizes: "48x48"},
+                {rel: "icon", href: "/favicon.svg", type: "image/svg+xml"},
+                {rel: "apple-touch-icon", href: "/apple-touch-icon.png"},
+                {rel: "manifest", href: "/site.webmanifest"}
+            ]
+        }
+    },
+
     runtimeConfig: {
         // Public absolute origin used in emailed download links (NUXT_SITE_URL). Distinct from
         // Nuxt's reserved NUXT_APP_BASE_URL, which is a route path prefix and stays untouched.

@@ -1,0 +1,29 @@
+{
+    "name": "Chaptify",
+    "short_name": "Chaptify",
+    "description": "Split audiobooks into per-chapter files and convert audiobooks between MP3 and M4B, delivered by a temporary email link.",
+    "start_url": "/",
+    "display": "browser",
+    "background_color": "#f6f6fa",
+    "theme_color": "#f6f6fa",
+    "icons": [
+        {
+            "src": "/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}
