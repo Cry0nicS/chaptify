@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * Hero illustration: an example audiobook's chapters laid out the way a running watch shows laps —
+ * Example output: a sample audiobook's chapters laid out the way a running watch shows laps —
  * lap number, chapter, length, and a bar for each lap's share of the longest one. It is real data in
  * a real table (with a caption), so it reads correctly without the visuals.
  */
@@ -36,7 +36,7 @@ const lapNumber = (index: number) => String(index + 1).padStart(2, "0");
 <template>
     <div>
         <div class="flex items-baseline justify-between gap-4">
-            <p class="micro-label">Splits</p>
+            <p class="micro-label">Example output</p>
             <p class="data-line">
                 {{ splits.length }} chapters ·
                 <span class="text-highlighted font-semibold">
@@ -44,6 +44,8 @@ const lapNumber = (index: number) => String(index + 1).padStart(2, "0");
                 </span>
             </p>
         </div>
+
+        <p class="text-muted mt-1 text-sm">A sample audiobook, as its chapters come back.</p>
 
         <table class="mt-3 w-full border-collapse text-left">
             <caption class="sr-only">
