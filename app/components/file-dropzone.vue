@@ -79,12 +79,20 @@ const openPicker = (event?: MouseEvent) => {
     fileInput.value?.click();
 };
 
-// dragleave also fires when the pointer moves onto a child element; only clear the highlight once it
-// has actually left the zone, so it does not flicker while dragging across the text.
-const onDragLeave = (event: DragEvent) => {
-    const zone = event.currentTarget as HTMLElement;
+// dragenter and dragleave fire for every child the pointer crosses, and Firefox and some Safari
+// versions report no relatedTarget on dragleave, so count entries and leaves instead: the zone is
+// only left once every enter has been matched by a leave.
+let dragDepth = 0;
 
-    if (!zone.contains(event.relatedTarget as Node | null)) {
+const onDragEnter = () => {
+    dragDepth += 1;
+    isDragActive.value = true;
+};
+
+const onDragLeave = () => {
+    dragDepth = Math.max(0, dragDepth - 1);
+
+    if (dragDepth === 0) {
         isDragActive.value = false;
     }
 };
@@ -98,6 +106,7 @@ const prompt = computed(() => {
 });
 
 const onDrop = (event: DragEvent) => {
+    dragDepth = 0;
     isDragActive.value = false;
 
     if (props.disabled || !event.dataTransfer?.files) {
@@ -130,8 +139,8 @@ defineExpose({
             :aria-disabled="disabled || undefined"
             :style="{cursor: disabled ? 'not-allowed' : 'pointer'}"
             @click="openPicker"
-            @dragenter.prevent="isDragActive = true"
-            @dragover.prevent="isDragActive = true"
+            @dragenter.prevent="onDragEnter"
+            @dragover.prevent
             @dragleave.prevent="onDragLeave"
             @drop.prevent="onDrop">
             <div
