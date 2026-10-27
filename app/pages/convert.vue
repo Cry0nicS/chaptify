@@ -82,12 +82,16 @@ const layers = [
     <div class="pb-16">
         <section
             class="grid gap-10 pt-12 pb-10 lg:grid-cols-[minmax(0,1fr)_minmax(27rem,0.9fr)] lg:gap-14 lg:pt-16">
-            <div class="lg:pt-2">
+            <div class="min-w-0 lg:pt-2">
+                <p class="micro-label text-secondary flex items-center gap-2">
+                    <UIcon
+                        name="i-lucide-repeat"
+                        class="size-4 shrink-0" />
+                    One file in, the other format out
+                </p>
                 <h1
-                    class="font-display text-highlighted max-w-[20ch] text-4xl font-bold tracking-[-0.042em] text-balance sm:text-5xl lg:text-6xl">
-                    Convert an audiobook
-                    <span class="text-primary">between</span>
-                    MP3 and M4B.
+                    class="font-display text-highlighted mt-4 max-w-[18ch] text-5xl leading-[0.95] font-bold text-balance sm:text-6xl lg:text-7xl">
+                    Convert an audiobook between MP3 and M4B.
                 </h1>
 
                 <p class="text-toned mt-6 max-w-[52ch] text-base sm:text-lg">
@@ -99,63 +103,27 @@ const layers = [
                     class="border-default mt-8 grid grid-cols-2 gap-x-8 gap-y-5 border-t pt-6 sm:flex sm:flex-wrap sm:gap-x-10">
                     <div>
                         <dt class="micro-label">Accepts</dt>
-                        <dd class="text-highlighted mt-1 font-semibold">M4B · MP3</dd>
+                        <dd class="stat text-highlighted mt-1 text-3xl">M4B · MP3</dd>
                     </div>
                     <div>
                         <dt class="micro-label">Up to</dt>
-                        <dd class="text-highlighted mt-1 font-semibold">1.6 GB · 30 h</dd>
+                        <dd class="stat text-highlighted mt-1 text-3xl">1.6 GB · 30 h</dd>
                     </div>
                     <div>
                         <dt class="micro-label">Chapters needed</dt>
-                        <dd class="text-highlighted mt-1 font-semibold">No</dd>
+                        <dd class="stat text-highlighted mt-1 text-3xl">No</dd>
                     </div>
                     <div>
                         <dt class="micro-label">Cost</dt>
-                        <dd class="text-highlighted mt-1 font-semibold">Free</dd>
+                        <dd class="stat text-secondary mt-1 text-3xl">Free</dd>
                     </div>
                 </dl>
-
-                <div class="pane pane-settle pane-settle-1 mt-10 p-5 sm:p-6">
-                    <p class="micro-label">The swap</p>
-
-                    <div class="mt-5 flex items-center justify-center gap-4 sm:gap-7">
-                        <p
-                            class="text-highlighted font-display text-3xl font-bold tracking-tight sm:text-4xl">
-                            MP3
-                        </p>
-                        <UIcon
-                            name="i-lucide-repeat"
-                            class="text-primary size-6 shrink-0 sm:size-7" />
-                        <p
-                            class="text-highlighted font-display text-3xl font-bold tracking-tight sm:text-4xl">
-                            M4B
-                        </p>
-                    </div>
-
-                    <ul class="border-muted mt-6 flex flex-wrap gap-1.5 border-t pt-5">
-                        <li
-                            v-for="item in preserved"
-                            :key="item.label"
-                            class="border-muted text-toned flex items-center gap-1.5 rounded-full border bg-white/85 px-2.5 py-1.5 text-sm dark:bg-white/10">
-                            <UIcon
-                                :name="item.icon"
-                                class="text-secondary size-3.5 shrink-0" />
-                            {{ item.label }}
-                        </li>
-                    </ul>
-
-                    <p class="border-muted text-muted mt-5 border-t pt-4 text-sm">
-                        Need per-chapter files instead of one converted file?
-                        <ULink
-                            class="text-primary font-medium"
-                            to="/">
-                            Split the audiobook
-                        </ULink>
-                    </p>
-                </div>
             </div>
 
-            <div :class="showJobPanel ? 'lg:self-start' : 'lg:sticky lg:top-24 lg:self-start'">
+            <!-- On small screens the form follows the headline directly; the swap sits below it. -->
+            <div
+                class="lg:col-start-2 lg:row-span-2 lg:row-start-1"
+                :class="showJobPanel ? 'lg:self-start' : 'lg:sticky lg:top-24 lg:self-start'">
                 <div
                     v-if="!showJobPanel"
                     class="pane pane-front pane-settle pane-settle-2 p-5 sm:p-6">
@@ -268,7 +236,7 @@ const layers = [
                 <UButton
                     v-if="workflow.status === 'failed' && !workflow.job"
                     type="button"
-                    class="mt-4 rounded-full"
+                    class="mt-4"
                     color="neutral"
                     variant="subtle"
                     icon="i-lucide-refresh-cw"
@@ -276,31 +244,72 @@ const layers = [
                     Start over
                 </UButton>
             </div>
+            <div class="min-w-0 lg:col-start-1">
+                <div class="pane pane-settle pane-settle-1 p-5 sm:p-6">
+                    <p class="micro-label">The swap</p>
+
+                    <div class="mt-5 flex items-center justify-center gap-4 sm:gap-7">
+                        <p class="stat text-highlighted text-5xl sm:text-6xl">MP3</p>
+                        <UIcon
+                            name="i-lucide-repeat"
+                            class="text-primary size-6 shrink-0 sm:size-7" />
+                        <p class="stat text-primary text-5xl sm:text-6xl">M4B</p>
+                    </div>
+
+                    <ul class="border-muted mt-6 flex flex-wrap gap-1.5 border-t pt-5">
+                        <li
+                            v-for="item in preserved"
+                            :key="item.label"
+                            class="border-default text-toned bg-default flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium">
+                            <UIcon
+                                :name="item.icon"
+                                class="text-secondary size-3.5 shrink-0" />
+                            {{ item.label }}
+                        </li>
+                    </ul>
+
+                    <p class="border-muted text-muted mt-5 border-t pt-4 text-sm">
+                        Need per-chapter files instead of one converted file?
+                        <ULink
+                            class="text-primary font-medium"
+                            to="/">
+                            Split the audiobook
+                        </ULink>
+                    </p>
+                </div>
+            </div>
         </section>
 
         <section
-            class="grid gap-5 md:grid-cols-3 md:items-start"
+            class="pt-6"
             aria-labelledby="convert-how">
             <h2
                 id="convert-how"
-                class="sr-only">
+                class="font-display text-highlighted text-3xl font-bold sm:text-4xl">
                 How it works
             </h2>
-            <article
-                v-for="(layer, index) in layers"
-                :key="layer.index"
-                class="pane pane-lift p-6"
-                :class="index === 0 ? 'md:mt-16' : index === 1 ? 'md:mt-8' : ''">
-                <p class="data-line text-primary">{{ layer.index }}</p>
-                <h3
-                    class="text-highlighted mt-6 text-xl font-semibold tracking-[-0.025em] text-balance">
-                    {{ layer.title }}
-                </h3>
-                <p class="text-muted mt-2.5 text-sm">{{ layer.body }}</p>
-                <p class="border-muted data-line data-line-accent mt-5 border-t pt-3.5">
-                    {{ layer.data }}
-                </p>
-            </article>
+
+            <!-- The three steps read as a course: checkpoints along one track line. -->
+            <ol class="mt-8 grid gap-8 md:grid-cols-3 md:gap-6">
+                <li
+                    v-for="layer in layers"
+                    :key="layer.index"
+                    class="border-primary relative border-t-2 pt-6">
+                    <span
+                        class="bg-primary absolute -top-[7px] left-0 size-3 rounded-full"
+                        aria-hidden="true" />
+                    <p
+                        class="stat text-primary text-4xl"
+                        aria-hidden="true">
+                        {{ layer.index }}
+                    </p>
+                    <h3 class="text-highlighted mt-3 text-xl font-bold text-balance">
+                        {{ layer.title }}
+                    </h3>
+                    <p class="text-muted mt-2 max-w-[42ch]">{{ layer.body }}</p>
+                    <p class="data-line data-line-accent mt-4">{{ layer.data }}</p>
+                </li>
+            </ol>
         </section>
     </div>
 </template>
