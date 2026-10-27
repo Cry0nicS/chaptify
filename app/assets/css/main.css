@@ -162,6 +162,20 @@ body {
     border-top: 3px solid var(--ui-primary);
 }
 
+/* ...and sits a step above the page: a deeper, still-soft shadow in light, a lifted surface in dark. */
+.pane-raised {
+    box-shadow:
+        0 1px 2px rgb(20 19 31 / 0.06),
+        0 16px 40px -20px rgb(20 19 31 / 0.28);
+}
+
+.dark .pane-raised {
+    border-color: #34344a;
+    border-top-color: var(--ui-primary);
+    background: var(--ui-bg-elevated);
+    box-shadow: none;
+}
+
 .pane-lift {
     transition: border-color 150ms ease;
 }

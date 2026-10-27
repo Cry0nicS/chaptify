@@ -93,7 +93,7 @@ defineExpose({
         </label>
 
         <div
-            class="has-[input:focus-visible]:outline-primary rounded-lg border-2 border-dashed p-5 transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2"
+            class="has-[input:focus-visible]:outline-primary @container rounded-lg border-2 border-dashed p-5 transition-colors has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2"
             :class="
                 isDragActive
                     ? 'border-primary bg-primary/10'
@@ -103,7 +103,8 @@ defineExpose({
             @dragover.prevent="isDragActive = true"
             @dragleave.prevent="isDragActive = false"
             @drop.prevent="onDrop">
-            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div
+                class="flex flex-col items-start gap-4 @md:flex-row @md:items-center @md:justify-between">
                 <div class="flex items-center gap-4">
                     <span
                         class="border-default bg-default flex size-11 shrink-0 items-center justify-center rounded-md border"
