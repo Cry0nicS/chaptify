@@ -11,12 +11,13 @@ export const useSiteOrigin = () => {
     const config = useRuntimeConfig();
 
     return useState<string>("site-origin", () => {
-        const configured = normalizeOrigin(config.siteUrl);
-
-        if (configured) {
-            return configured;
+        // `siteUrl` is server-only config. The state is normally hydrated from the server, but it can
+        // first be created on the client — after clearing an error page that the server rendered in
+        // place of app.vue — and reading it there only logs a warning, so use the browser origin.
+        if (import.meta.client) {
+            return window.location.origin;
         }
 
-        return import.meta.client ? window.location.origin : "";
+        return normalizeOrigin(config.siteUrl);
     });
 };
